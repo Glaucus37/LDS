@@ -18,7 +18,7 @@ double* x, * y, * vx, * vy, * ax, * ay;
 double dt, dt_sq, sigma;
 int N, Lx, Ly;
 double t = 0.;
-double t_max = 1.;
+double t_max = 10.;
 int step = 0;
 
 #define PI acos(-1.0)
@@ -27,22 +27,36 @@ int step = 0;
 int main() {
 	srand((unsigned int)time(NULL));
 
-	N = 10;
-	Lx = Ly = 10;
+	N = 10; // number of particles in system
+	Lx = Ly = 10; // side length
+	
 	dt = 0.01;
 	dt_sq = dt * dt;
-	sigma = 0.1;
+	sigma = 0.1; // dissipative force factor
 
-	aloq();
+	aloq(); // allocate memory for global variables
 
-	init_particles();
-	rand_velocities();
+	init_particles(); // initialize particles at random positions
+	rand_velocities(); // set random velocities
 
 	run_sim();
 
 	return 0;
 }
 
+
+
+void run_sim() {
+	do {
+		rand_accel(); // random accelerations; eventually based on Langevin
+		verlet(); // particle movement based on verlet
+
+		step++;
+		t += dt * step; // keeping track of time
+
+		printf("%d", step);
+	} while (t < t_max);
+}
 
 
 void init_particles() {
@@ -53,20 +67,6 @@ void init_particles() {
 		printf("x: %lf\t\ty: %lf\n", x[i], y[i]);
 	}
 	printf("\n");
-}
-
-
-void run_sim() {
-	printf("%d", step);
-	do {
-		rand_accel();
-		verlet();
-
-		step++;
-		t += dt * step;
-
-		printf("%d", step);
-	} while (t < t_max);
 }
 
 
@@ -136,7 +136,7 @@ void verlet() {
 	double x_new, y_new;
 	double ax_new, ay_new;
 
-	printf("Positions at step %d:\n", step + 1);
+	printf("\nPositions at step %d, time %lf:\n", step + 1, t);
 
 	for (int i = 0; i < N; i++) {
 		x_new = x[i] + vx[i] * dt + 0.5 * ax[i] * dt_sq;
@@ -151,6 +151,7 @@ void verlet() {
 }
 
 
+// Periodic Boundary Conditions
 double pbc(double x) {
 	if (x < 0) {
 		x += Lx;
