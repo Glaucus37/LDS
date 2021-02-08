@@ -29,7 +29,7 @@ int main() {
 
 	N = 10; // number of particles in system
 	Lx = Ly = 10; // side length
-	
+
 	dt = 0.01;
 	dt_sq = dt * dt;
 	sigma = 0.1; // dissipative force factor
