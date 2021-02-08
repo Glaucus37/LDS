@@ -2,6 +2,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <time.h>
+#include <string.h>
 // #include <Python.h>
 // #include <numpy/arrayobject.h>
 
@@ -19,14 +20,13 @@ double rms();
 double kin_energy();
 double gauss(double std_dev); // standard deviation
 void aloq();
-void find_neighbors(int cell);
+void find_neighbors();
 
 double* x, * y, * vx, * vy, * ax, * ay, * kin_U, * gauss_vel, * k_list;
-int neighbors[5];
-double dt, dt_sq, sigma_, o_sqrt_dt;
+int** k_neighbors;
+double dt, dt_sq, o_sqrt_dt, sigma_;
 int N, cells, L;
 double t = 0.;
-double dt = 0.01;
 double t_max = 1.5;
 double gamma_ = 1.;
 int steps = 0;
@@ -36,6 +36,7 @@ int steps_max;
 
 #define PI acos(-1.0)
 #define lat_size 4
+#define dt 0.01
 
 int main(){
 	/*
@@ -61,6 +62,7 @@ int main(){
 	cells = (int)(lat_size * lat_size);
 
 	aloq(); // allocate memory for global variables/arrays
+	find_neighbors();
 
 	init_particles(); // initialize particles at random positions
 	rand_velocities(); // set random velocities
@@ -75,6 +77,7 @@ int main(){
 	for(int i = 0; i < steps_max; i++){
 		fprintf(fp, "%.6lf\n", kin_U[i]);
 	}
+	fclose(fp);
 
 	return 0;
 }
@@ -111,6 +114,11 @@ void aloq(){
 
 	ax = (double*)calloc(N, sizeof(double));
 	ay = (double*)calloc(N, sizeof(double));
+
+	k_neighbors = (int**)calloc(cells, sizeof(int*));
+	for(int i = 0; i < cells; i++){
+		k_neighbors[i] = (int*)calloc(5, sizeof(int));
+	}
 
 	kin_U = (double*)calloc(steps_max, sizeof(double));
 	gauss_vel = (double*)calloc(2, sizeof(double));
@@ -255,25 +263,28 @@ double gauss(double std_dev){ // generate pair of numbers with given dev
 }
 
 
-void find_neighbors(int cell){
+void find_neighbors(){
+	// "naive" neighbors, aka disregarding pbc
 	static int naive_neighbors[5] = {0, 1, lat_size - 1, lat_size, lat_size + 1};
-	memcpy(neighbors, naive_neighbors, sizeof(naive_neighbors));
+	int neighbors[5]; // local array to calculate neighbors
 
-	if(cell % lat_size == 0){
-		neighbors[2] += lat_size;
-	}else if(cell % lat_size == lat_size - 1){
-		neighbors[1] -= lat_size;
-		neighbors[4] -= lat_size;
-	}
-	if(floor(cell / lat_size) == lat_size - 1){
-		neighbors[2] -= cells;
-		neighbors[3] -= cells;
-		neighbors[4] -= cells;
-	}
+	for(int k = 0; k < cells; k++){
+		// initialize neighbors at naive_neighbors
+		memcpy(neighbors, naive_neighbors, sizeof(naive_neighbors));
+		for(int i = 0; i < 5; i++){
+			neighbors[i] += k;
+		}
 
-	printf("Vecinos de la celda %d:\n", cell);
-	for(int i = 0; i < 5; i++){
-		neighbors[i] += cell;
-		printf("%d-", neighbors[i]);
-	}printf("\n\n");
+		if(k % lat_size == 0){
+			neighbors[2] += lat_size;
+		}else if(k % lat_size == lat_size - 1){
+			neighbors[1] -= lat_size;
+			neighbors[4] -= lat_size;
+		}
+		if(floor(k / lat_size) == lat_size - 1){
+			neighbors[2] -= cells;
+			neighbors[3] -= cells;
+			neighbors[4] -= cells;
+		}
+	}
 }
