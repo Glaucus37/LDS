@@ -4,7 +4,6 @@
 #include <time.h>
 #include <string.h>
 // #include <Python.h>
-// #include <numpy/arrayobject.h>
 
 
 void init_particles();
@@ -25,29 +24,22 @@ void find_neighbors();
 double* x, * y, * vx, * vy, * ax, * ay, * kin_U, * gauss_vel, * k_list;
 int** k_neighbors;
 double dt, dt_sq, o_sqrt_dt, sigma_;
-int N, cells, L;
+int cells, L;
 double t = 0.;
-double t_max = 1.5;
-double gamma_ = 1.;
 int steps = 0;
 int steps_max;
-
-// PyObject *pName, *pModule;
 
 #define PI acos(-1.0)
 #define lat_size 4
 #define dt 0.01
+#define v_max 5.
+#define a_max 3.
+#define t_max 10.
+#define gamma_ 1.
+#define N 100
 
 int main(){
-	/*
-	PyInitialize();
-	pName = PyUnicode_FromString(plots.py);
-	pModule = PyImport_Import(pName);
-	Py_DECREF(pName);
-	*/
 	srand((unsigned int)time(NULL));
-
-	N = 10; // number of particles in system
 	L = 10; // side length
 
 	//defining constants
@@ -69,16 +61,23 @@ int main(){
 	rand_accel(); //set initial random acceleration
 
 	run_sim(); // run the actual iterative simulation
-
 	printf("\nAverage velocity (RMS): %.3lf m/s\n", rms());
 
 	FILE *fp;
-	fp = fopen("energy.txt", "w");
+	fp = fopen("energy2.txt", "w");
 	for(int i = 0; i < steps_max; i++){
 		fprintf(fp, "%.6lf\n", kin_U[i]);
 	}
 	fclose(fp);
 
+	/*
+	Py_Initialize();
+	char py_filename[] = "plots.py";
+	free(fp);
+	fp = _Py_fopen(py_filename, "r");
+	PyRun_SimpleFile(fp, py_filename);
+	Py_Finalize();
+	*/
 	return 0;
 }
 
@@ -99,8 +98,8 @@ void run_sim(){
 
 void init_particles(){
 	for(int i = 0; i < N; i++){
-		x[i] = L * (float)rand() / RAND_MAX; //random number between 0 and 1
-		y[i] = L * (float)rand() / RAND_MAX;
+		x[i] = L * (double)rand() / RAND_MAX; //random number between 0 and 1
+		y[i] = L * (double)rand() / RAND_MAX;
 	}
 }
 
@@ -129,16 +128,16 @@ void aloq(){
 
 
 void rand_velocities(){
-	double v = 3.; // max speed per dimension
 	double vx_cm = 0;
 	double vy_cm = 0;
 	double theta; //velocity direction
 
 	//generate random velocities
+	double modulo = 0;
 	for(int i = 0; i < N; i++){
-		theta = 2 * PI * (float)rand() / RAND_MAX;
-		vx[i] = v * cos(theta);
-		vy[i] = v * sin(theta);
+		theta = 2 * PI * (double)rand() / RAND_MAX;
+		vx[i] = v_max * cos(theta);
+		vy[i] = v_max * sin(theta);
 		vx_cm += vx[i]; // velocity of center of mass
 		vy_cm += vy[i];
 	}
@@ -150,20 +149,22 @@ void rand_velocities(){
 	for(int i = 0; i < N; i++){
 		vx[i] -= vx_cm;
 		vy[i] -= vy_cm;
+
+		modulo += vx[i] * vx[i] + vy[i] * vy[i];
 	}
+	printf("\n%lf", sqrt(modulo / N));
 }
 
 
 void rand_accel(){ //same principle as with velocity
-	double a = 5.;
 	double ax_cm = 0;
 	double ay_cm = 0;
 	double theta;
 
 	for(int i = 0; i < N; i++){
-		theta = 2 * PI * (float)rand() / RAND_MAX;
-		ax[i] = a * cos(theta);
-		ay[i] = a * sin(theta);
+		theta = 2 * PI * (double)rand() / RAND_MAX;
+		ax[i] = a_max * cos(theta);
+		ay[i] = a_max * sin(theta);
 		ax_cm += ax[i];
 		ay_cm += ay[i];
 	}
@@ -243,10 +244,10 @@ double rms(){ // root medium square
 double kin_energy(){ // calculate kinetic energy of the whole system
 	double kin = 0;
 	for(int i = 0; i < N; i++){
-		kin += 0.5 * (vx[i] * vx[i] + vy[i] * vy[i]) * dt_sq;
+		kin += 0.5 * (vx[i] * vx[i] + vy[i] * vy[i]);
 	}
 
-	return kin;
+	return kin / N;
 }
 
 
@@ -271,7 +272,7 @@ void find_neighbors(){
 	for(int k = 0; k < cells; k++){
 		// initialize neighbors at naive_neighbors
 		memcpy(neighbors, naive_neighbors, sizeof(naive_neighbors));
-		for(int i = 0; i < 5; i++){
+		for(int i = 0; i < 5; i++){ // and then add
 			neighbors[i] += k;
 		}
 
