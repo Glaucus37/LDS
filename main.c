@@ -2,75 +2,107 @@
 #include <math.h>
 #include <stdlib.h>
 #include <time.h>
+// #include <Python.h>
+// #include <numpy/arrayobject.h>
 
 
 void init_particles();
 void run_sim();
-void calculate_forces();
 void rand_velocities();
 void rand_accel();
 void verlet();
-double pbc(x);
-
+void vel_half_step();
+void verlet_end();
+void accel();
+double pbc(double x);
+double rms();
+double kin_energy();
+double gauss(double std_dev); // standard deviation
 void aloq();
+void find_neighbors(int cell);
 
-double* x, * y, * vx, * vy, * ax, * ay;
-double dt, dt_sq, sigma;
-int N, Lx, Ly;
+double* x, * y, * vx, * vy, * ax, * ay, * kin_U, * gauss_vel, * k_list;
+int neighbors[5];
+double dt, dt_sq, sigma_, o_sqrt_dt;
+int N, cells, L;
 double t = 0.;
-double t_max = 10.;
-int step = 0;
+double dt = 0.01;
+double t_max = 1.5;
+double gamma_ = 1.;
+int steps = 0;
+int steps_max;
+
+// PyObject *pName, *pModule;
 
 #define PI acos(-1.0)
+#define lat_size 4
 
-
-int main() {
+int main(){
+	/*
+	PyInitialize();
+	pName = PyUnicode_FromString(plots.py);
+	pModule = PyImport_Import(pName);
+	Py_DECREF(pName);
+	*/
 	srand((unsigned int)time(NULL));
 
 	N = 10; // number of particles in system
-	Lx = Ly = 10; // side length
+	L = 10; // side length
 
-	dt = 0.01;
+	//defining constants
 	dt_sq = dt * dt;
-	sigma = 0.1; // dissipative force factor
+	o_sqrt_dt = 1 / sqrt(dt);
+	double kBT = 1;
+	double m = 1;
+	sigma_ = o_sqrt_dt * sqrt(2 * gamma_ * kBT * m);
 
-	aloq(); // allocate memory for global variables
+	steps_max = (int)(t_max / dt) + 1; //calculate number of steps to be taken
+
+	cells = (int)(lat_size * lat_size);
+
+	aloq(); // allocate memory for global variables/arrays
 
 	init_particles(); // initialize particles at random positions
 	rand_velocities(); // set random velocities
+	rand_accel(); //set initial random acceleration
 
-	run_sim();
+	run_sim(); // run the actual iterative simulation
+
+	printf("\nAverage velocity (RMS): %.3lf m/s\n", rms());
+
+	FILE *fp;
+	fp = fopen("energy.txt", "w");
+	for(int i = 0; i < steps_max; i++){
+		fprintf(fp, "%.6lf\n", kin_U[i]);
+	}
 
 	return 0;
 }
 
 
-
-void run_sim() {
+void run_sim(){
 	do {
-		rand_accel(); // random accelerations; eventually based on Langevin
-		verlet(); // particle movement based on verlet
+		verlet(); // recalculate position and velocity
+		vel_half_step(); // half-step update of velocity
+		accel(); // calculate acceleration on particles
+		vel_half_step(); // second half_step update
+		kin_U[steps] = kin_energy(); //keeping track of system's energy
 
-		step++;
-		t += dt * step; // keeping track of time
-
-		printf("%d", step);
+		t += dt; // keeping track of time
+		steps++;
 	} while (t < t_max);
 }
 
 
-void init_particles() {
-	printf("Initial positions:\n");
-	for (int i = 0; i < N; i++) {
-		x[i] = Lx * (float)rand() / RAND_MAX;
-		y[i] = Ly * (float)rand() / RAND_MAX;
-		printf("x: %lf\t\ty: %lf\n", x[i], y[i]);
+void init_particles(){
+	for(int i = 0; i < N; i++){
+		x[i] = L * (float)rand() / RAND_MAX; //random number between 0 and 1
+		y[i] = L * (float)rand() / RAND_MAX;
 	}
-	printf("\n");
 }
 
 
-void aloq() {
+void aloq(){
 	x = (double*)calloc(N, sizeof(double));
 	y = (double*)calloc(N, sizeof(double));
 
@@ -79,42 +111,48 @@ void aloq() {
 
 	ax = (double*)calloc(N, sizeof(double));
 	ay = (double*)calloc(N, sizeof(double));
+
+	kin_U = (double*)calloc(steps_max, sizeof(double));
+	gauss_vel = (double*)calloc(2, sizeof(double));
+
+	//neighbors = (int*)calloc(5, sizeof(int));
+	k_list = (int*)calloc((int)(N + cells), sizeof(int));
 }
 
 
-void rand_velocities() {
-	double v = 6.;
+void rand_velocities(){
+	double v = 3.; // max speed per dimension
 	double vx_cm = 0;
 	double vy_cm = 0;
-	double theta;
+	double theta; //velocity direction
 
 	//generate random velocities
-	for (int i = 0; i < N; i++) {
+	for(int i = 0; i < N; i++){
 		theta = 2 * PI * (float)rand() / RAND_MAX;
 		vx[i] = v * cos(theta);
 		vy[i] = v * sin(theta);
-		vx_cm += vx[i];
+		vx_cm += vx[i]; // velocity of center of mass
 		vy_cm += vy[i];
 	}
 
-	vx_cm /= N;
+	vx_cm /= N; // average out the velocities of all the particles
 	vy_cm /= N;
 
-	//correct velocities to set velocity of center of mass to cero.
-	for (int i = 0; i < N; i++) {
+	//correct velocities to cancel center of mass drift
+	for(int i = 0; i < N; i++){
 		vx[i] -= vx_cm;
 		vy[i] -= vy_cm;
 	}
 }
 
 
-void rand_accel() {
+void rand_accel(){ //same principle as with velocity
 	double a = 5.;
 	double ax_cm = 0;
 	double ay_cm = 0;
 	double theta;
 
-	for (int i = 0; i < N; i++) {
+	for(int i = 0; i < N; i++){
 		theta = 2 * PI * (float)rand() / RAND_MAX;
 		ax[i] = a * cos(theta);
 		ay[i] = a * sin(theta);
@@ -125,39 +163,117 @@ void rand_accel() {
 	ax_cm /= N;
 	ay_cm /= N;
 
-	for (int i = 0; i < N; i++) {
+	for(int i = 0; i < N; i++){
 		ax[i] -= ax_cm;
 		ay[i] -= ay_cm;
 	}
 }
 
 
-void verlet() {
+void verlet(){ // update positions based on velocity and acceleration
 	double x_new, y_new;
 	double ax_new, ay_new;
 
-	printf("\nPositions at step %d, time %lf:\n", step + 1, t);
-
-	for (int i = 0; i < N; i++) {
+	for(int i = 0; i < N; i++){
 		x_new = x[i] + vx[i] * dt + 0.5 * ax[i] * dt_sq;
 		y_new = y[i] + vy[i] * dt + 0.5 * ay[i] * dt_sq;
-		vx[i] += (ax[i] - sigma * vx[i]) * dt;
-		vy[i] += (ay[i] - sigma * vy[i]) * dt;
 		x[i] = pbc(x_new);
 		y[i] = pbc(y_new);
+	}
+}
 
-		printf("x: %lf\t\ty: %lf\n", x[i], y[i]);
+
+void vel_half_step(){ // update velocity at half-step intervals
+	for(int i = 0; i < N; i++){
+		vx[i] += 0.5 * ax[i] * dt;
+		vy[i] += 0.5 * ay[i] * dt;
+	}
+}
+
+
+/*
+* Note about accel():
+* I added and initial run of gauss() to be able to call it again in
+* the middle of every step. This is to delete any possible correlation
+* between vx and xy for every particle at every step.
+*
+* @Glaucus37
+*/
+void accel(){ // update acceleration based on...
+	gauss(1.);
+	for(int i = 0; i < N; i++){
+						// ...drag				// ...and browninan motion
+		ax[i] = -gamma_ * vx[i] + sigma_ * gauss_vel[0];
+		gauss(1.);
+		ay[i] = -gamma_ * vy[i] + sigma_ * gauss_vel[1];
 	}
 }
 
 
 // Periodic Boundary Conditions
-double pbc(double x) {
-	if (x < 0) {
-		x += Lx;
+double pbc(double x){ // x (or y)
+	if (x < 0){
+		x += L;
 	}
-	else if (x > Lx) {
-		x -= Lx;
+	else if (x > L){
+		x -= L;
 	}
 	return x;
+}
+
+
+double rms(){ // root medium square
+	double ms = 0;
+
+	for(int i = 0; i < N; i++){
+		ms += vx[i] * vx[i] + vy[i] * vy[i];
+	}
+	return sqrt(ms / N);
+}
+
+
+double kin_energy(){ // calculate kinetic energy of the whole system
+	double kin = 0;
+	for(int i = 0; i < N; i++){
+		kin += 0.5 * (vx[i] * vx[i] + vy[i] * vy[i]) * dt_sq;
+	}
+
+	return kin;
+}
+
+
+double gauss(double std_dev){ // generate pair of numbers with given dev
+	double r_sq, fac, v1, v2;
+	do{
+		v1 = 2. * rand() / RAND_MAX - 1;
+		v2 = 2. * rand() / RAND_MAX - 1;
+		r_sq = v1 * v1 + v2 * v2;
+	} while(r_sq > 1. || r_sq == 0);
+	fac = std_dev * sqrt(-2. * log(r_sq) / r_sq);
+	gauss_vel[0] = v1 * fac;
+	gauss_vel[1] = v2 * fac;
+}
+
+
+void find_neighbors(int cell){
+	static int naive_neighbors[5] = {0, 1, lat_size - 1, lat_size, lat_size + 1};
+	memcpy(neighbors, naive_neighbors, sizeof(naive_neighbors));
+
+	if(cell % lat_size == 0){
+		neighbors[2] += lat_size;
+	}else if(cell % lat_size == lat_size - 1){
+		neighbors[1] -= lat_size;
+		neighbors[4] -= lat_size;
+	}
+	if(floor(cell / lat_size) == lat_size - 1){
+		neighbors[2] -= cells;
+		neighbors[3] -= cells;
+		neighbors[4] -= cells;
+	}
+
+	printf("Vecinos de la celda %d:\n", cell);
+	for(int i = 0; i < 5; i++){
+		neighbors[i] += cell;
+		printf("%d-", neighbors[i]);
+	}printf("\n\n");
 }
