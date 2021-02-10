@@ -2,29 +2,41 @@ import sys
 import math
 
 import functions as f
+import matplotlib.pyplot as plt
+import numpy as np
+from scipy.stats import norm
+# import random as rand
 
 
+# if __name__ == '__main__':
 
-if __name__ == '__main__':
-    # v_init = 5.
-
-    try:
-        v_init = float(sys.argv[1])
-    except IndexError:
-        v_init = 5.
-    except TypeError:
-        'speed must be floating point'
-    v_0 = f.main(v_init)
-
-    for i in range(len(v_0)):
-        for j in range(len(v_0[0])):
-            print(v_0[i, j])
-        print('')
+    fig, ax = plt.subplots(nrows=2, ncols=1)
 
     try:
-        v_init = float(sys.argv[2])
-        f.main(v_init)
+        arr = np.array(sys.argv[1:])
+        v_arr = arr.astype(float)
+        for i in len(v_arr):
+            v_arr[i] = float(v_arr[i])
     except IndexError:
-        pass
+        v_arr = [1.]
     except TypeError:
-        'speed must be floating point'
+        'input error'
+    """
+    for v in v_arr:
+        kin_U, v_x, v_max = f.main(v)
+        v_max += 10
+
+        t = range(len(kin_U))
+        ax[0].plot(t, kin_U)
+    """
+    mu, sigma = 0, 0.1 # mean and standard deviation
+    s = np.random.normal(mu, sigma, 1000)
+
+    x = np.linspace(-0.02, 0.02, 100)
+    count, bins, ignores = plt.hist(v_x[100:, :], 30, range=(-.01, .01))
+    # ax[0].plot([0, t[-1]], [1, 1])
+    ax[1].plot(x, norm.pdf(x), alpha=0.6)
+    # ax[1].xticks((0, ))
+    # plt.ylim((0, 1))
+    # plt.xlim((-.02, .02))
+    plt.show()

@@ -1,7 +1,7 @@
 import math
 from cython import array
 import numpy as np
-# cimport numpy as cnp
+cimport numpy as cnp
 import random as rand
 
 # from libc.stdlib cimport rand, srand, RAND_MAX
@@ -10,11 +10,10 @@ cython: language_level=3
 
 # Variable definitions
 cdef int D = 2
-cdef int N = 10
-cdef double dt = 0.01
-cdef double t_max = 0.05
+cdef int N = 100
+cdef double dt = 0.001
+cdef double t_max = 10.
 cdef double L = 10.
-# cdef double v_init = 5.
 cdef double a_init = 5.
 cdef double gamma_ = 1.
 cdef double kBT = 1.
@@ -31,7 +30,7 @@ cdef long cells = lat_size ** 2
 
 
 # Array declarations
-print 'Max steps: ', steps_max
+print '\nMax steps: ', steps_max
 cdef double [:, :] x = np.zeros((steps_max, N))
 cdef double [:, :] y = np.zeros((steps_max, N))
 cdef double [:, :] vx = np.zeros((steps_max, N))
@@ -52,32 +51,29 @@ cpdef object main(double v_init):
 
   run_sim()
 
-  print 'Average velocity (RMS): ', rms(), '\n'
+  print 'Average velocity (RMS): ', rms()
 
-  for i in range(steps_max):
-    print 'step: ', i
-    for j in range(N):
-      print 'x: ', x[i, j], '\t\ty: ', y[i, j]
-      print 'vx: ', vx[i, j], '\tvy: ', vy[i, j]
-      print 'ax: ', ax[i, j], '\tay: ', ay[i, j]
-    print ''
-    print 'kinetic energy: ', kin_U[i]
-    print ''
+  cdef double v_max = 0.
+  v_max = np.max(vx)
+  print 'maximum velocity: ', v_max
 
-  return vx
+  return kin_U, vx, v_max
 
 
 # Initialize positions for all particles
 cpdef init_particles(double v_init):
+  cdef double theta
   for i in range(N):
     x[0, i] = L * <double>rand.random()
     y[0, i] = L * <double>rand.random()
 
-    vx[0, i] = v_init * <double>rand.random()
-    vy[0, i] = v_init * <double>rand.random()
+    theta = <double>(2 * math.pi * rand.random())
+    vx[0, i] = v_init * math.cos(theta)
+    vy[0, i] = v_init * math.sin(theta)
 
-    ax[0, i] = a_init * <double>rand.random()
-    ay[0, i] = a_init * <double>rand.random()
+    theta = <double>(2 * math.pi * rand.random())
+    ax[0, i] = a_init * math.cos(theta)
+    ay[0, i] = a_init * math.sin(theta)
 
   return
 
@@ -85,11 +81,13 @@ cpdef init_particles(double v_init):
 # Simulation loop
 cdef void run_sim():
   cdef step = 0
+
   while step < steps_max - 1:
     verlet(step)
     vel_half_step(step)
     accel(step)
     vel_half_step(step)
+
     kin_U[step] = kin_energy(step)
 
     step += 1
@@ -123,9 +121,10 @@ cdef void vel_half_step(int step):
 
 
 cdef void accel(int step):
-  gauss(1.)
   cdef int next = step + 1
   for i in range(N):
+    # ax[next, i] += -gamma_ * vx[step, i] + sigma_ * np.random.normal()
+    # ay[next, i] += -gamma_ * vy[step, i] + sigma_ * np.random.normal()
     ax[next, i] = -gamma_ * vx[step, i] + sigma_ * gauss_vel[0]
     gauss(1.)
     ay[next, i] = -gamma_ * vy[step, i] + sigma_ * gauss_vel[1]
@@ -133,9 +132,14 @@ cdef void accel(int step):
   return
 
 
-cdef void gauss(double std_dev):
-  cdef double fac, v1, v2
-  cdef double r_sq = 0.
+cdef class gauss:
+  cdef double r_sq, fac, v1, v2, std_dev, g_vel
+
+  def __init__(self, s):
+    self.std_dev = s
+
+  def 
+
   while r_sq > 1. or r_sq == 0.:
     v1 = <double>(2. * rand.random() - 1)
     v2 = <double>(2. * rand.random() - 1)
@@ -166,6 +170,7 @@ cdef double rms():
   return math.sqrt(ms)
 
 
+# calculate average kinetic energy of particles
 cdef double kin_energy(step):
   cdef double kin = 0
   for i in range(N):
@@ -196,3 +201,8 @@ cdef long [:, :] set_neighbors():
     neighbors[k] = naive_neighbors
 
   return neighbors
+
+
+cdef double max(double [:, :] v):
+  cdef double max = 0.
+  return max
