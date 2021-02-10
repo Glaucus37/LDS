@@ -149,7 +149,10 @@ void rand_velocities(){
 	for(int i = 0; i < N; i++){
 		vx[i] -= vx_cm;
 		vy[i] -= vy_cm;
+
+		modulo += vx[i] * vx[i] + vy[i] * vy[i];
 	}
+	printf("\n%lf", sqrt(modulo / N));
 }
 
 
