@@ -21,7 +21,7 @@ double gauss(double std_dev); // standard deviation
 void aloq();
 void find_neighbors();
 
-double* x, * y, * vx, * vy, * ax, * ay, * kin_U, * gauss_vel, * k_list;
+double* x, * y, * vx, * vy, * ax, * ay, * kin_U, * gauss_vel, * k_list, * v_list;
 int** k_neighbors;
 double dt, dt_sq, o_sqrt_dt, sigma_;
 int cells, L;
@@ -34,7 +34,7 @@ int steps_max;
 #define dt 0.01
 #define v_max 5.
 #define a_max 3.
-#define t_max 10.
+#define t_max 100.
 #define gamma_ 1.
 #define N 100
 
@@ -60,15 +60,11 @@ int main(){
 	rand_velocities(); // set random velocities
 	rand_accel(); //set initial random acceleration
 
+
 	run_sim(); // run the actual iterative simulation
 	printf("\nAverage velocity (RMS): %.3lf m/s\n", rms());
 
-	FILE *fp;
-	fp = fopen("energy2.txt", "w");
-	for(int i = 0; i < steps_max; i++){
-		fprintf(fp, "%.6lf\n", kin_U[i]);
-	}
-	fclose(fp);
+
 
 	/*
 	Py_Initialize();
@@ -83,16 +79,23 @@ int main(){
 
 
 void run_sim(){
+	FILE *fp;
+	fp = fopen("velocity.txt", "w");
 	do {
 		verlet(); // recalculate position and velocity
 		vel_half_step(); // half-step update of velocity
 		accel(); // calculate acceleration on particles
 		vel_half_step(); // second half_step update
 		kin_U[steps] = kin_energy(); //keeping track of system's energy
+		v_list[steps] = vx[0];
+		for(int j = 0; j < N; j++){
+			fprintf(fp, "%.6lf\n", vx[j]);
+		}
 
 		t += dt; // keeping track of time
 		steps++;
 	} while (t < t_max);
+	fclose(fp);
 }
 
 
@@ -113,6 +116,8 @@ void aloq(){
 
 	ax = (double*)calloc(N, sizeof(double));
 	ay = (double*)calloc(N, sizeof(double));
+
+	v_list = (double*)calloc(steps_max * N, sizeof(double));
 
 	k_neighbors = (int**)calloc(cells, sizeof(int*));
 	for(int i = 0; i < cells; i++){
