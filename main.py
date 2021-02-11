@@ -22,6 +22,8 @@ if __name__ == '__main__':
     for v in v_arr:
         kin_U, v_x, max_steps = f.main(v)
         ax[0].plot(kin_U)
+        for i in range(len(kin_U)):
+            print(kin_U[i])
 
     ax[0].plot([0, max_steps], [1, 1], 'k-')
 
@@ -32,8 +34,6 @@ if __name__ == '__main__':
     mu, sigma = 0, 0.1 # mean and standard deviation
     s = np.random.normal(mu, sigma, 1000)
     x = np.arange(-1, 1, 0.1)
-    ax[1].hist(v_x[int(max_steps * 0.1):], bins=30, density=True)
-    ax[1].plot()
     # ax[1].xticks((0, ))
     # plt.ylim((0, 1))
     # plt.xlim((-.02, .02))

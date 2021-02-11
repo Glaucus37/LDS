@@ -14,7 +14,7 @@ cdef int N = 100
 cdef double dt = 1e-2
 cdef double t_max = 1e1
 cdef double L = 10.
-cdef double a_init = 5.
+cdef double a_init = 2.
 cdef double gamma_ = 1.
 cdef double kBT = 1.
 cdef double m = 1.
@@ -36,7 +36,7 @@ cdef double [:, :] vx = np.zeros((max_steps, N))
 cdef double [:, :] vy = np.zeros((max_steps, N))
 cdef double [:, :] ax = np.zeros((max_steps, N))
 cdef double [:, :] ay = np.zeros((max_steps, N))
-cdef double [:] kin_U = np.zeros(max_steps)
+cdef double [:] kin_U = np.zeros(max_steps - 1)
 # cdef double [:] gauss_vel = np.zeros(2)
 # cdef long [:, :] k_neighbors = np.zeros((cells, 5), dtype=np.int32)
 
@@ -76,18 +76,19 @@ cpdef init_particles(double v_init):
 
 # Simulation loop
 cdef void run_sim():
-  cdef step = 0
+  cdef int step = 0
+  cdef int next
 
   while step < max_steps - 1:
+    next = step + 1
     verlet(step)
     vel_half_step(step)
     accel(step)
     vel_half_step(step)
 
-    kin_U[step] = kin_energy(step)
+    kin_U[step] = kin_energy(next)
 
     step += 1
-  kin_U[step] = kin_energy(step)
 
   return
 
@@ -120,10 +121,6 @@ cdef void accel(int step):
   cdef double g1, g2, a_x, a_y
   cdef int next = step + 1
   for i in range(N):
-    # ax[next, i] += -gamma_ * vx[step, i] + sigma_ * np.random.normal()
-    # ay[next, i] += -gamma_ * vy[step, i] + sigma_ * np.random.normal()
-    # ax[next, i] = -gamma_ * vx[step, i] + sigma_ * gauss.vel()
-    # ay[next, i] = -gamma_ * vy[step, i] + sigma_ * gauss.vel()
     g1, g2 = gauss()
     a_x = ax[step, i]
     a_y = ay[step, i]
@@ -144,27 +141,6 @@ cdef (double, double) gauss():
   fac = s_dev * math.sqrt(-2. * math.log(r_sq) / r_sq)
   return (v1 * fac, v2 * fac)
 
-"""
-cdef class gauss:
-  cdef double std_dev, g_vel, r_sq
-
-  def __init__(self, double s):
-    self.std_dev = s
-    self.r_sq = 0.
-  def vel(self):
-    cdef double fac, v1, v2
-    if self.r_sq:
-      self.r_sq = 0.
-      return self.g_vel
-    else:
-      while self.r_sq > 1. or self.r_sq == 0.:
-        v1 = <double>(2. * rand.random() - 1)
-        v2 = <double>(2. * rand.random() - 1)
-        r_sq = v1 ** 2 + v2 ** 2
-      fac = self.std_dev * math.sqrt(-2. * math.log(self.r_sq) / self.r_sq)
-      self.g_vel = v1 * fac
-      return v2 * fac
-"""
 
 # Periodic boundary conditions
 cdef double pbc(double x):
@@ -188,6 +164,7 @@ cdef double rms():
 # calculate average kinetic energy of particles
 cdef double kin_energy(step):
   cdef double kin = 0
+  cdef int i
   for i in range(N):
     kin += 0.5 * (vx[step, i] ** 2 + vy[step, i] ** 2)
 
