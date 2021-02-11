@@ -30,14 +30,13 @@ cdef long cells = lat_size ** 2
 
 
 # Array declarations
-cdef double [:, :] x = np.zeros((max_steps, N))
+cdef double [:, :] x = np.zeros((max_steps, N), dtype=np.double)
 cdef double [:, :] y = np.zeros((max_steps, N))
 cdef double [:, :] vx = np.zeros((max_steps, N))
 cdef double [:, :] vy = np.zeros((max_steps, N))
 cdef double [:, :] ax = np.zeros((max_steps, N))
 cdef double [:, :] ay = np.zeros((max_steps, N))
 cdef double [:] kin_U = np.zeros(max_steps)
-# cdef double [:] gauss_vel = np.zeros(2)
 # cdef long [:, :] k_neighbors = np.zeros((cells, 5), dtype=np.int32)
 
 
@@ -97,6 +96,7 @@ cdef void verlet(int step):
   cdef int next = step + 1
   cdef double x_new
   cdef double y_new
+  cdef int i
   for i in range(N):
     x_new = x[step, i] + vx[step, i] * dt + 0.5 * ax[step, i] * dt_sq
     y_new = y[step, i] + vy[step, i] * dt + 0.5 * ay[step, i] * dt_sq
@@ -109,6 +109,7 @@ cdef void verlet(int step):
 #Update velocity at half steps
 cdef void vel_half_step(int step):
   cdef int next = step + 1
+  cdef int i
   for i in range(N):
     vx[next, i] += 0.5 * ax[step, i] * dt
     vy[next, i] += 0.5 * ay[step, i] * dt
@@ -119,6 +120,7 @@ cdef void vel_half_step(int step):
 cdef void accel(int step):
   cdef double g1, g2, a_x, a_y
   cdef int next = step + 1
+  cdef int i
   for i in range(N):
     # ax[next, i] += -gamma_ * vx[step, i] + sigma_ * np.random.normal()
     # ay[next, i] += -gamma_ * vy[step, i] + sigma_ * np.random.normal()
@@ -144,27 +146,6 @@ cdef (double, double) gauss():
   fac = s_dev * math.sqrt(-2. * math.log(r_sq) / r_sq)
   return (v1 * fac, v2 * fac)
 
-"""
-cdef class gauss:
-  cdef double std_dev, g_vel, r_sq
-
-  def __init__(self, double s):
-    self.std_dev = s
-    self.r_sq = 0.
-  def vel(self):
-    cdef double fac, v1, v2
-    if self.r_sq:
-      self.r_sq = 0.
-      return self.g_vel
-    else:
-      while self.r_sq > 1. or self.r_sq == 0.:
-        v1 = <double>(2. * rand.random() - 1)
-        v2 = <double>(2. * rand.random() - 1)
-        r_sq = v1 ** 2 + v2 ** 2
-      fac = self.std_dev * math.sqrt(-2. * math.log(self.r_sq) / self.r_sq)
-      self.g_vel = v1 * fac
-      return v2 * fac
-"""
 
 # Periodic boundary conditions
 cdef double pbc(double x):
@@ -179,15 +160,17 @@ cdef double pbc(double x):
 # calculate rms velocity
 cdef double rms():
   cdef double ms = 0
+  cdef int i
   for i in range(N):
     ms += vx[-1, i] ** 2 + vy[-1, i] ** 2
 
-  return math.sqrt(ms)
+  return np.sqrt(ms)
 
 
 # calculate average kinetic energy of particles
 cdef double kin_energy(step):
   cdef double kin = 0
+  cdef int i
   for i in range(N):
     kin += 0.5 * (vx[step, i] ** 2 + vy[step, i] ** 2)
 
@@ -196,11 +179,14 @@ cdef double kin_energy(step):
 
 # Set neighbors for each cell
 cdef long [:, :] set_neighbors():
-  neighbors = np.zeros((cells, 5), dtype=np.int32)
+  cdef long [:, :] neighbors = np.zeros((cells, 5), dtype=np.int32)
+  cdef long [:] naive_neighbors
+  cdef int k, i
 
   for k in range(cells):
     naive_neighbors = np.array([0, 1, lat_size - 1, lat_size, lat_size + 1])
-    naive_neighbors += k
+    for i in range(5):
+      naive_neighbors[i] += k
 
     # Boundary conditions on neighbor list
     if k % lat_size == 0:
@@ -216,6 +202,9 @@ cdef long [:, :] set_neighbors():
     neighbors[k] = naive_neighbors
 
   return neighbors
+
+
+# cdef long cell_pbc(memoryview)
 
 
 cdef double max(double [:, :] v):
