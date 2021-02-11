@@ -1,3 +1,4 @@
+import sys
 import math
 from cython import array
 import numpy as np
@@ -14,6 +15,7 @@ cdef int N = 100
 cdef double dt = 1e-2
 cdef double t_max = 1e1
 cdef double L = 10.
+cdef double v_init
 cdef double a_init = 2.
 cdef double gamma_ = 1.
 cdef double kBT = 1.
@@ -23,7 +25,6 @@ cdef double dt_sq = dt ** 2
 cdef double o_sqrt_dt = 1 / math.sqrt(dt)
 cdef double sigma_ = o_sqrt_dt * math.sqrt(2 * gamma_ * kBT * m)
 
-# cdef int step = 0
 cdef int max_steps = int(t_max / dt)
 cdef int lat_size = 5
 cdef long cells = lat_size ** 2
@@ -41,11 +42,15 @@ cdef double [:] kin_U = np.zeros(max_steps - 1)
 # cdef long [:, :] k_neighbors = np.zeros((cells, 5), dtype=np.int32)
 
 
-cpdef object main(double v_init):
+cpdef object main():
   rand.seed()
-  # gaussian = gauss(1.)
-
   cdef long [:, :] k_neighbors = set_neighbors()
+  
+  if len(sys.argv) > 1:
+    try:
+      v_init = <float>sys.argv[1]
+    except TypeError:
+      v_init = 1.
 
   init_particles(v_init)
 
@@ -77,7 +82,6 @@ cpdef init_particles(double v_init):
 # Simulation loop
 cdef void run_sim():
   cdef int step = 0
-  cdef int next
 
   while step < max_steps - 1:
     next = step + 1
@@ -86,7 +90,7 @@ cdef void run_sim():
     accel(step)
     vel_half_step(step)
 
-    kin_U[step] = kin_energy(next)
+    kin_U[step] = kin_energy(step)
 
     step += 1
 
@@ -110,6 +114,7 @@ cdef void verlet(int step):
 #Update velocity at half steps
 cdef void vel_half_step(int step):
   cdef int next = step + 1
+  cdef int i
   for i in range(N):
     vx[next, i] += 0.5 * ax[step, i] * dt
     vy[next, i] += 0.5 * ay[step, i] * dt
@@ -162,7 +167,7 @@ cdef double rms():
 
 
 # calculate average kinetic energy of particles
-cdef double kin_energy(step):
+cpdef double kin_energy(int step):
   cdef double kin = 0
   cdef int i
   for i in range(N):
@@ -193,8 +198,3 @@ cdef long [:, :] set_neighbors():
     neighbors[k] = naive_neighbors
 
   return neighbors
-
-
-cdef double max(double [:, :] v):
-  cdef double max = 0.
-  return max
