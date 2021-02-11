@@ -8,34 +8,32 @@ from scipy.stats import norm
 # import random as rand
 
 
-# if __name__ == '__main__':
-
+if __name__ == '__main__':
     fig, ax = plt.subplots(nrows=2, ncols=1)
 
-    try:
-        arr = np.array(sys.argv[1:])
-        v_arr = arr.astype(float)
-        for i in len(v_arr):
-            v_arr[i] = float(v_arr[i])
-    except IndexError:
+    v_arr = []
+    for x in sys.argv:
+        if not x == 'main.py':
+            v_arr.append(float(x))
+    if v_arr == []:
         v_arr = [1.]
-    except TypeError:
-        'input error'
-    """
-    for v in v_arr:
-        kin_U, v_x, v_max = f.main(v)
-        v_max += 10
+    print(v_arr)
 
-        t = range(len(kin_U))
-        ax[0].plot(t, kin_U)
-    """
+    for v in v_arr:
+        kin_U, v_x, max_steps = f.main(v)
+        ax[0].plot(kin_U)
+
+    ax[0].plot([0, max_steps], [1, 1], 'k-')
+
+    count, bins, ignored = plt.hist(v_x, 80, density=True)
+    ax[1].plot(bins, 1/(1 * np.sqrt(2 * np.pi)) * \
+            np.exp( - (bins - 0)**2 / (2 * 1**2) ),
+            linewidth=2, color='k')
     mu, sigma = 0, 0.1 # mean and standard deviation
     s = np.random.normal(mu, sigma, 1000)
-
-    x = np.linspace(-0.02, 0.02, 100)
-    count, bins, ignores = plt.hist(v_x[100:, :], 30, range=(-.01, .01))
-    # ax[0].plot([0, t[-1]], [1, 1])
-    ax[1].plot(x, norm.pdf(x), alpha=0.6)
+    x = np.arange(-1, 1, 0.1)
+    ax[1].hist(v_x[int(max_steps * 0.1):], bins=30, density=True)
+    ax[1].plot()
     # ax[1].xticks((0, ))
     # plt.ylim((0, 1))
     # plt.xlim((-.02, .02))
