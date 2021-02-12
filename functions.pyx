@@ -1,8 +1,10 @@
+import sys
 import math
 from cython import array
 import numpy as np
 cimport numpy as cnp
 import random as rand
+import matplotlib.pyplot as plt
 
 # from libc.stdlib cimport rand, srand, RAND_MAX
 
@@ -14,7 +16,8 @@ cdef int N = 100
 cdef double dt = 1e-2
 cdef double t_max = 1e1
 cdef double L = 10.
-cdef double a_init = 5.
+cdef double v_init
+cdef double a_init = 2.
 cdef double gamma_ = 1.
 cdef double kBT = 1.
 cdef double m = 1.
@@ -23,10 +26,11 @@ cdef double dt_sq = dt ** 2
 cdef double o_sqrt_dt = 1 / math.sqrt(dt)
 cdef double sigma_ = o_sqrt_dt * math.sqrt(2 * gamma_ * kBT * m)
 
-# cdef int step = 0
 cdef int max_steps = int(t_max / dt)
 cdef int lat_size = 5
 cdef long cells = lat_size ** 2
+
+cdef bint _q = False
 
 
 # Array declarations
@@ -37,26 +41,33 @@ cdef double [:, :] vy = np.zeros((max_steps, N))
 cdef double [:, :] ax = np.zeros((max_steps, N))
 cdef double [:, :] ay = np.zeros((max_steps, N))
 cdef double [:] kin_U = np.zeros(max_steps)
-# cdef long [:, :] k_neighbors = np.zeros((cells, 5), dtype=np.int32)
+# cdef long [:, :] k_neighbors = np.zeros((cells, 5))
 
 
-cpdef object main(double v_init):
-  rand.seed()
-  # gaussian = gauss(1.)
-
-  cdef long [:, :] k_neighbors = set_neighbors()
-
-  init_particles(v_init)
-
+cpdef void main():
+  setup()
   run_sim()
 
-  print '\nAverage velocity (RMS): ', rms()
+  return
 
-  return kin_U, vx, max_steps
 
+cdef void setup():
+  rand.seed()
+  # Array declarations
+  x = np.zeros((max_steps, N))
+  y = np.zeros((max_steps, N))
+  vx = np.zeros((max_steps, N))
+  vy = np.zeros((max_steps, N))
+  ax = np.zeros((max_steps, N))
+  ay = np.zeros((max_steps, N))
+  kin_U = np.zeros(max_steps)
+
+  init_particles()
+
+  return
 
 # Initialize positions for all particles
-cpdef init_particles(double v_init):
+cdef init_particles():
   cdef double theta
   for i in range(N):
     x[0, i] = L * <double>rand.random()
@@ -75,18 +86,18 @@ cpdef init_particles(double v_init):
 
 # Simulation loop
 cdef void run_sim():
-  cdef step = 0
 
+  cdef int step = 0
   while step < max_steps - 1:
+    next = step + 1
     verlet(step)
-    vel_half_step(step)
     accel(step)
     vel_half_step(step)
-
-    kin_U[step] = kin_energy(step)
+    kin_U[step] = kin_energy(next)
 
     step += 1
-  kin_U[step] = kin_energy(step)
+
+  kin_U[step] = kin_energy(next)
 
   return
 
@@ -100,6 +111,8 @@ cdef void verlet(int step):
   for i in range(N):
     x_new = x[step, i] + vx[step, i] * dt + 0.5 * ax[step, i] * dt_sq
     y_new = y[step, i] + vy[step, i] * dt + 0.5 * ay[step, i] * dt_sq
+    vx[next, i] = 0.5 * ax[step, i] * dt
+    vy[next, i] = 0.5 * ay[step, i] * dt
     x[next, i] = pbc(x_new)
     y[next, i] = pbc(y_new)
 
@@ -122,10 +135,6 @@ cdef void accel(int step):
   cdef int next = step + 1
   cdef int i
   for i in range(N):
-    # ax[next, i] += -gamma_ * vx[step, i] + sigma_ * np.random.normal()
-    # ay[next, i] += -gamma_ * vy[step, i] + sigma_ * np.random.normal()
-    # ax[next, i] = -gamma_ * vx[step, i] + sigma_ * gauss.vel()
-    # ay[next, i] = -gamma_ * vy[step, i] + sigma_ * gauss.vel()
     g1, g2 = gauss()
     a_x = ax[step, i]
     a_y = ay[step, i]
@@ -168,7 +177,7 @@ cdef double rms():
 
 
 # calculate average kinetic energy of particles
-cdef double kin_energy(step):
+cpdef double kin_energy(int step):
   cdef double kin = 0
   cdef int i
   for i in range(N):
@@ -203,10 +212,24 @@ cdef long [:, :] set_neighbors():
 
   return neighbors
 
+cpdef void plots(bint c):
+  fig, ax = plt.subplots(2, 1)
 
-# cdef long cell_pbc(memoryview)
+  ax[0].plot(kin_U)
+  ax[0].plot([0, max_steps], [1, 1], color='gray', linestyle='--')
 
+  count, bins, ignored = ax[1].hist(vx, 80, density=True)
+  cdef double mu = 0.
+  cdef double sig = 1.
+  ax[1].plot(bins, 1/(1 * np.sqrt(2 * np.pi)) * \
+            np.exp( - (bins - mu)**2 / (2 * sig**2) ),
+            linewidth=2, color='gray', linestyle='--')
 
-cdef double max(double [:, :] v):
-  cdef double max = 0.
-  return max
+  if c:
+    kBT = 0.5
+    main()
+    ax[0].plot(kin_U)
+    kBT = 2.
+    main()
+    ax[0].plot(kin_U)
+  plt.show()
