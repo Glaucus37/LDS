@@ -16,21 +16,15 @@ cdef int N = 100
 cdef double dt = 1e-2
 cdef double t_max = 1e1
 cdef double L = 10.
-cdef double v_init
+cdef double v_init = 1.
 cdef double a_init = 2.
-cdef double gamma_ = 1.
-cdef double kBT = 1.
-cdef double m = 1.
 
 cdef double dt_sq = dt ** 2
 cdef double o_sqrt_dt = 1 / math.sqrt(dt)
-cdef double sigma_ = o_sqrt_dt * math.sqrt(2 * gamma_ * kBT * m)
-
 cdef int max_steps = int(t_max / dt)
+
 cdef int lat_size = 5
 cdef long cells = lat_size ** 2
-
-cdef bint _q = False
 
 
 # Array declarations
@@ -44,9 +38,10 @@ cdef double [:] kin_U = np.zeros(max_steps)
 # cdef long [:, :] k_neighbors = np.zeros((cells, 5))
 
 
-cpdef void main():
+cpdef void main(object args=(1., 1., 1.)):
+  a = accel(args)
   setup()
-  run_sim()
+  run_sim(a)
 
   return
 
@@ -85,13 +80,12 @@ cdef init_particles():
 
 
 # Simulation loop
-cdef void run_sim():
-
+cdef void run_sim(object a):
   cdef int step = 0
   while step < max_steps - 1:
     next = step + 1
     verlet(step)
-    accel(step)
+    a.run(step)
     vel_half_step(step)
     kin_U[step] = kin_energy(next)
 
@@ -130,18 +124,22 @@ cdef void vel_half_step(int step):
   return
 
 
-cdef void accel(int step):
-  cdef double g1, g2, a_x, a_y
-  cdef int next = step + 1
-  cdef int i
-  for i in range(N):
-    g1, g2 = gauss()
-    a_x = ax[step, i]
-    a_y = ay[step, i]
-    ax[next, i] = a_x - gamma_ * vx[step, i] + sigma_ * g1
-    ay[next, i] = a_y - gamma_ * vy[step, i] + sigma_ * g2
+cdef class accel:
+  cdef public double gamma, sigma
+  def __init__(self, args=(1., 1., 1.)):
+    self.gamma = args[0]
+    self.sigma = o_sqrt_dt * math.sqrt(2 * args[0] * args[1] * args[2])
+  def run(self, int step):
+    cdef double g1, g2, a_x, a_y
+    cdef int next = step + 1
+    cdef int i
+    for i in range(N):
+      g1, g2 = gauss()
+      a_x = ax[step, i]
+      a_y = ay[step, i]
+      ax[next, i] = a_x - self.gamma * vx[step, i] + self.sigma * g1
+      ay[next, i] = a_y - self.gamma * vy[step, i] + self.sigma * g2
 
-  return
 
 
 cdef (double, double) gauss():
@@ -213,24 +211,76 @@ cdef long [:, :] set_neighbors():
   return neighbors
 
 
-cpdef void plots(bint c):
-  fig, ax = plt.subplots(2, 1)
+cpdef void plot_simple():
+  fig, axes = plt.subplots(2, 1, figsize=(8, 6))
 
-  ax[0].plot(kin_U)
-  ax[0].plot([0, max_steps], [1, 1], color='gray', linestyle='--')
+  axes[0].plot(kin_U)
+  axes[0].plot([0, max_steps], [1, 1], color='gray', linestyle='--')
+  axes[0].set_xticks([0, max_steps / 2,  max_steps])
+  axes[0].set_xticklabels([0, max_steps * dt / 2, max_steps * dt])
+  axes[0].set_xlabel('Time (s)')
+  axes[0].set_yticks([0, 1])
+  axes[0].set_ylabel(r'Energy $(k_BT)$')
+  axes[0].title.set_text('Energy over time')
 
-  count, bins, ignored = ax[1].hist(vx, 80, density=True)
   cdef double mu = 0.
   cdef double sig = 1.
-  ax[1].plot(bins, 1/(1 * np.sqrt(2 * np.pi)) * \
+  count, bins, ignored = axes[1].hist(vx, 80, density=True)
+  axes[1].plot(bins, 1/(1 * np.sqrt(2 * np.pi)) * \
             np.exp( - (bins - mu)**2 / (2 * sig**2) ),
             linewidth=2, color='gray', linestyle='--')
+  axes[1].set_xlim([np.percentile(bins, 0.5), np.percentile(bins, 99.5)])
+  axes[1].set_xlabel('Velocity')
+  axes[1].set_ylabel('Relative Frequency')
+  axes[1].title.set_text('Histogram of Particle Velocity')
 
-  if c:
-    kBT = 0.5
-    main()
-    ax[0].plot(kin_U)
-    kBT = 2.
-    main()
-    ax[0].plot(kin_U)
+  fig.tight_layout(pad=3.)
+  plt.show()
+
+
+cpdef void plot_full():
+  print('plot_full')
+  fig, axes = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
+  fig.suptitle('Energy over time')
+
+  axes[0].plot(kin_U, label=r'$\gamma$ = 1.0')
+  axes[1].plot(kin_U, label=r'$k_BT$ = 1.0')
+  axes[2].plot(kin_U, label='m = 1.')
+
+  main((2., 1., 1.))
+  axes[0].plot(kin_U, label=r'$\gamma$ = 2.0')
+  main((0.5, 1., 1.))
+  axes[0].plot(kin_U, label=r'$\gamma$ = 0.5')
+  axes[0].legend()
+  axes[0].set_yticks([0, 1])
+  axes[0].set_ylabel(r'Energy $(k_BT)$')
+
+  main((1., 2., 1.))
+  axes[1].plot(kin_U, label=r'$k_BT$ = 2.0')
+  main((1., 0.5, 1.))
+  axes[1].plot(kin_U, label=r'$k_BT$ = 0.5')
+  axes[1].legend()
+  axes[1].set_yticks([0, 1, 2])
+  axes[1].set_ylabel(r'Energy $(k_BT)$')
+
+  main((1., 1., 2.))
+  axes[2].plot(kin_U, label='m = 2.0')
+  main((1., 1., 0.5))
+  axes[2].plot(kin_U, label='m = 0.5')
+  axes[2].legend()
+  axes[2].set_yticks([0, 1, 2])
+  axes[2].set_ylabel(r'Energy $(k_BT)$')
+  axes[2].set_xlabel('Time (s)')
+
+  axes[0].set_xticks([0, max_steps / 2,  max_steps])
+  axes[0].set_xticklabels([0, max_steps * dt / 2, max_steps * dt])
+
+  axes[0].plot([0, max_steps], [1, 1], color='gray', linestyle='--')
+  axes[1].plot([0, max_steps], [1, 1], color='gray', linestyle='--')
+  axes[1].plot([0, max_steps], [2, 2], color='gray', linestyle='--')
+  axes[1].plot([0, max_steps], [0.5, 0.5], color='gray', linestyle='--')
+  axes[2].plot([0, max_steps], [1, 1], color='gray', linestyle='--')
+  axes[2].plot([0, max_steps], [2, 2], color='gray', linestyle='--')
+  axes[2].plot([0, max_steps], [0.5, 0.5], color='gray', linestyle='--')
+
   plt.show()

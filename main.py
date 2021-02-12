@@ -11,11 +11,15 @@ from scipy.stats import norm
 
 if __name__ == '__main__':
     arg = sys.argv[1:]
+    const = [1., 1., 1.]
 
     f.main()
 
     if '-q' not in arg:
-        c = False
-        if '-c' in arg:
-            c = True
-        f.plots(c)
+        print('not -q')
+        if '-s' in arg:
+            print('-s')
+            f.plot_simple()
+        else:
+            print('not -s')
+            f.plot_full()
