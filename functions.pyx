@@ -4,6 +4,7 @@ from cython import array
 import numpy as np
 cimport numpy as cnp
 import random as rand
+import matplotlib.pyplot as plt
 
 # from libc.stdlib cimport rand, srand, RAND_MAX
 
@@ -29,6 +30,8 @@ cdef int max_steps = int(t_max / dt)
 cdef int lat_size = 5
 cdef long cells = lat_size ** 2
 
+cdef bint _q = False
+
 
 # Array declarations
 cdef double [:, :] x = np.zeros((max_steps, N))
@@ -37,32 +40,39 @@ cdef double [:, :] vx = np.zeros((max_steps, N))
 cdef double [:, :] vy = np.zeros((max_steps, N))
 cdef double [:, :] ax = np.zeros((max_steps, N))
 cdef double [:, :] ay = np.zeros((max_steps, N))
-cdef double [:] kin_U = np.zeros(max_steps - 1)
-# cdef double [:] gauss_vel = np.zeros(2)
-# cdef long [:, :] k_neighbors = np.zeros((cells, 5), dtype=np.int32)
+cdef double [:] kin_U = np.zeros(max_steps)
+cdef long [:, :] k_neighbors = set_neighbors()
 
 
-cpdef object main():
-  rand.seed()
-  cdef long [:, :] k_neighbors = set_neighbors()
-  
-  if len(sys.argv) > 1:
-    try:
-      v_init = <float>sys.argv[1]
-    except TypeError:
-      v_init = 1.
+cpdef void p():
+  print max_steps
 
-  init_particles(v_init)
+cpdef void main():
+  setup()
 
   run_sim()
 
-  print '\nAverage velocity (RMS): ', rms()
+  return
 
-  return kin_U, vx, max_steps
 
+cdef void setup():
+  rand.seed()
+  # Array declarations
+  x = np.zeros((max_steps, N))
+  y = np.zeros((max_steps, N))
+  vx = np.zeros((max_steps, N))
+  vy = np.zeros((max_steps, N))
+  ax = np.zeros((max_steps, N))
+  ay = np.zeros((max_steps, N))
+  kin_U = np.zeros(max_steps)
+  k_neighbors = set_neighbors()
+
+  init_particles(v_init)
+
+  return
 
 # Initialize positions for all particles
-cpdef init_particles(double v_init):
+cdef init_particles(double v_init):
   cdef double theta
   for i in range(N):
     x[0, i] = L * <double>rand.random()
@@ -89,10 +99,11 @@ cdef void run_sim():
     vel_half_step(step)
     accel(step)
     vel_half_step(step)
-
-    kin_U[step] = kin_energy(step)
+    kin_U[step] = kin_energy(next)
 
     step += 1
+
+  kin_U[step] = kin_energy(next)
 
   return
 
@@ -198,3 +209,26 @@ cdef long [:, :] set_neighbors():
     neighbors[k] = naive_neighbors
 
   return neighbors
+
+
+cpdef void plots(bint c):
+  fig, ax = plt.subplots(2, 1)
+
+  ax[0].plot(kin_U)
+  ax[0].plot([0, max_steps], [1, 1], color='gray', linestyle='--')
+
+  count, bins, ignored = ax[1].hist(vx, 80, density=True)
+  ax[1].plot(bins, 1/(1 * np.sqrt(2 * np.pi)) * \
+            np.exp( - (bins - 0)**2 / (2 * 1**2) ),
+            linewidth=2, color='gray', linestyle='--')
+
+  if c:
+    kBT = 0.5
+    main()
+    ax[0].plot(kin_U)
+
+    kBT = 2.
+    main()
+    ax[0].plot(kin_U)
+
+  plt.show()
