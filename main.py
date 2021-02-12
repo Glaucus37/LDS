@@ -16,10 +16,7 @@ if __name__ == '__main__':
     f.main()
 
     if '-q' not in arg:
-        print('not -q')
         if '-s' in arg:
-            print('-s')
             f.plot_simple()
         else:
-            print('not -s')
             f.plot_full()

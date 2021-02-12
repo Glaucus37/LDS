@@ -14,7 +14,7 @@ cython: language_level=3
 cdef int D = 2
 cdef int N = 100
 cdef double dt = 1e-2
-cdef double t_max = 1e1
+cdef double t_max = 1e2
 cdef double L = 10.
 cdef double v_init = 1.
 cdef double a_init = 2.
@@ -239,7 +239,6 @@ cpdef void plot_simple():
 
 
 cpdef void plot_full():
-  print('plot_full')
   fig, axes = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
   fig.suptitle('Energy over time')
 
