@@ -41,15 +41,11 @@ cdef double [:, :] vy = np.zeros((max_steps, N))
 cdef double [:, :] ax = np.zeros((max_steps, N))
 cdef double [:, :] ay = np.zeros((max_steps, N))
 cdef double [:] kin_U = np.zeros(max_steps)
-cdef long [:, :] k_neighbors = set_neighbors()
+# cdef long [:, :] k_neighbors = set_neighbors()
 
-
-cpdef void p():
-  print max_steps
 
 cpdef void main():
   setup()
-
   run_sim()
 
   return
@@ -65,14 +61,13 @@ cdef void setup():
   ax = np.zeros((max_steps, N))
   ay = np.zeros((max_steps, N))
   kin_U = np.zeros(max_steps)
-  k_neighbors = set_neighbors()
 
-  init_particles(v_init)
+  init_particles()
 
   return
 
 # Initialize positions for all particles
-cdef init_particles(double v_init):
+cdef init_particles():
   cdef double theta
   for i in range(N):
     x[0, i] = L * <double>rand.random()
@@ -91,12 +86,11 @@ cdef init_particles(double v_init):
 
 # Simulation loop
 cdef void run_sim():
-  cdef int step = 0
 
+  cdef int step = 0
   while step < max_steps - 1:
     next = step + 1
     verlet(step)
-    vel_half_step(step)
     accel(step)
     vel_half_step(step)
     kin_U[step] = kin_energy(next)
@@ -116,6 +110,8 @@ cdef void verlet(int step):
   for i in range(N):
     x_new = x[step, i] + vx[step, i] * dt + 0.5 * ax[step, i] * dt_sq
     y_new = y[step, i] + vy[step, i] * dt + 0.5 * ay[step, i] * dt_sq
+    vx[next, i] = 0.5 * ax[step, i] * dt
+    vy[next, i] = 0.5 * ay[step, i] * dt
     x[next, i] = pbc(x_new)
     y[next, i] = pbc(y_new)
 
@@ -218,17 +214,17 @@ cpdef void plots(bint c):
   ax[0].plot([0, max_steps], [1, 1], color='gray', linestyle='--')
 
   count, bins, ignored = ax[1].hist(vx, 80, density=True)
+  cdef double mu = 0.
+  cdef double sig = 1.
   ax[1].plot(bins, 1/(1 * np.sqrt(2 * np.pi)) * \
-            np.exp( - (bins - 0)**2 / (2 * 1**2) ),
+            np.exp( - (bins - mu)**2 / (2 * sig**2) ),
             linewidth=2, color='gray', linestyle='--')
 
   if c:
     kBT = 0.5
     main()
     ax[0].plot(kin_U)
-
     kBT = 2.
     main()
     ax[0].plot(kin_U)
-
   plt.show()
