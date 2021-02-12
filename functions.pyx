@@ -34,14 +34,14 @@ cdef bint _q = False
 
 
 # Array declarations
-cdef double [:, :] x = np.zeros((max_steps, N))
+cdef double [:, :] x = np.zeros((max_steps, N), dtype=np.double)
 cdef double [:, :] y = np.zeros((max_steps, N))
 cdef double [:, :] vx = np.zeros((max_steps, N))
 cdef double [:, :] vy = np.zeros((max_steps, N))
 cdef double [:, :] ax = np.zeros((max_steps, N))
 cdef double [:, :] ay = np.zeros((max_steps, N))
 cdef double [:] kin_U = np.zeros(max_steps)
-# cdef long [:, :] k_neighbors = set_neighbors()
+# cdef long [:, :] k_neighbors = np.zeros((cells, 5))
 
 
 cpdef void main():
@@ -107,6 +107,7 @@ cdef void verlet(int step):
   cdef int next = step + 1
   cdef double x_new
   cdef double y_new
+  cdef int i
   for i in range(N):
     x_new = x[step, i] + vx[step, i] * dt + 0.5 * ax[step, i] * dt_sq
     y_new = y[step, i] + vy[step, i] * dt + 0.5 * ay[step, i] * dt_sq
@@ -132,6 +133,7 @@ cdef void vel_half_step(int step):
 cdef void accel(int step):
   cdef double g1, g2, a_x, a_y
   cdef int next = step + 1
+  cdef int i
   for i in range(N):
     g1, g2 = gauss()
     a_x = ax[step, i]
@@ -167,10 +169,11 @@ cdef double pbc(double x):
 # calculate rms velocity
 cdef double rms():
   cdef double ms = 0
+  cdef int i
   for i in range(N):
     ms += vx[-1, i] ** 2 + vy[-1, i] ** 2
 
-  return math.sqrt(ms)
+  return np.sqrt(ms)
 
 
 # calculate average kinetic energy of particles
@@ -185,11 +188,14 @@ cpdef double kin_energy(int step):
 
 # Set neighbors for each cell
 cdef long [:, :] set_neighbors():
-  neighbors = np.zeros((cells, 5), dtype=np.int32)
+  cdef long [:, :] neighbors = np.zeros((cells, 5), dtype=np.int32)
+  cdef long [:] naive_neighbors
+  cdef int k, i
 
   for k in range(cells):
     naive_neighbors = np.array([0, 1, lat_size - 1, lat_size, lat_size + 1])
-    naive_neighbors += k
+    for i in range(5):
+      naive_neighbors[i] += k
 
     # Boundary conditions on neighbor list
     if k % lat_size == 0:
