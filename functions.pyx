@@ -212,6 +212,7 @@ cdef long [:, :] set_neighbors():
 
   return neighbors
 
+
 cpdef void plots(bint c):
   fig, ax = plt.subplots(2, 1)
 
