@@ -15,5 +15,7 @@ if __name__ == '__main__':
     if '-q' not in arg:
         if '-s' in arg:
             f.plot_simple()
+        elif '-p' in arg:
+            f.plot_pos()
         else:
             f.plot_full()

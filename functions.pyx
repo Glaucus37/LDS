@@ -16,7 +16,6 @@ cdef int N = 100
 cdef double dt = 1e-2
 cdef double t_max = 1e1
 cdef double L = 10.
-cdef double v_init = 1.
 cdef double a_init = 2.
 
 cdef double dt_sq = dt ** 2
@@ -34,19 +33,20 @@ cdef double [:, :] vx = np.zeros((max_steps, N))
 cdef double [:, :] vy = np.zeros((max_steps, N))
 cdef double [:, :] ax = np.zeros((max_steps, N))
 cdef double [:, :] ay = np.zeros((max_steps, N))
-cdef double [:] kin_U = np.zeros(max_steps - 1)
+cdef double [:] kin_U = np.zeros(max_steps)
 # cdef long [:, :] k_neighbors = np.zeros((cells, 5))
 
 
-cpdef void main(object args=(1., 1., 1.)):
+cpdef void main(object args=(1., 1., 1., 1.), int init=0):
   a = accel(args)
-  setup()
+  v_0 = a.v
+  setup(v_0, init)
   run_sim(a)
 
   return
 
 
-cdef void setup():
+cdef void setup(double v_0, int init):
   rand.seed()
   # Array declarations
   x = np.zeros((max_steps, N))
@@ -57,20 +57,26 @@ cdef void setup():
   ay = np.zeros((max_steps, N))
   kin_U = np.zeros(max_steps)
 
-  init_particles()
+  init_particles(v_0, init)
 
   return
 
+
+
 # Initialize positions for all particles
-cdef init_particles():
+cdef void init_particles(double v_0, int init):
   cdef double theta
   for i in range(N):
-    x[0, i] = L * <double>rand.random()
-    y[0, i] = L * <double>rand.random()
+    if init == 0:
+      x[0, i] = L * <double>rand.random()
+      y[0, i] = L * <double>rand.random()
+    else:
+      x[0, i] = L * 0.5
+      y[0, i] = L * 0.5
 
     theta = <double>(2 * math.pi * rand.random())
-    vx[0, i] = v_init * math.cos(theta)
-    vy[0, i] = v_init * math.sin(theta)
+    vx[0, i] = v_0 * math.cos(theta)
+    vy[0, i] = v_0 * math.sin(theta)
 
     theta = <double>(2 * math.pi * rand.random())
     ax[0, i] = a_init * math.cos(theta)
@@ -110,10 +116,6 @@ cdef void verlet(int step):
     y[next, i] = pbc(y_new)
     vx[next, i] = vx[step, i] + 0.5 * ax[step, i] * dt
     vy[next, i] = vy[step, i] + 0.5 * ay[step, i] * dt
-    # print vx[step, i]
-  # print 'kin: ', kin_U[step]
-  # if step >= 10:
-    # exit()
 
   return
 
@@ -130,11 +132,12 @@ cdef void vel_half_step(int step):
 
 
 cdef class accel:
-  cdef public double gamma, sigma, m
-  def __init__(self, args=(1., 1., 1.)):
+  cdef public double gamma, sigma, m, v
+  def __init__(self, args):
     self.gamma = args[0]
     self.sigma = o_sqrt_dt * math.sqrt(2 * args[0] * args[1] * args[2])
     self.m = args[2]
+    self.v = args[3]
   def run(self, int step):
     cdef double g1, g2, a_x, a_y
     cdef int next = step + 1
@@ -165,7 +168,7 @@ cdef double pbc(double x):
   if x < 0:
     x += L
   elif x >= L:
-    x += L
+    x -= L
 
   return x
 
@@ -246,49 +249,72 @@ cpdef void plot_simple():
   plt.show()
 
 
+
 cpdef void plot_full():
-  fig, axes = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
-  fig.suptitle('Energy over time')
+  fig, axes = plt.subplots(2, 2, figsize=(10, 8), sharex=True, sharey=True)
+  fig.suptitle('Dependency of Energy on Initial Conditions')
 
   main()
-  axes[0].plot(kin_U, label=r'$\gamma$ = 1.0')
-  axes[1].plot(kin_U, label=r'$k_BT$ = 1.0')
-  axes[2].plot(kin_U, label='m = 1.')
+  axes[0, 0].plot(kin_U, label=r'$\gamma$ = 1.0')
+  axes[0, 1].plot(kin_U, label=r'$k_BT$ = 1.0')
+  axes[1, 0].plot(kin_U, label='m = 1.0')
+  axes[1, 1].plot(kin_U, label=r'$v_0 = 1.0$')
 
-  main((2., 1., 1.))
-  axes[0].plot(kin_U, label=r'$\gamma$ = 2.0')
-  main((0.5, 1., 1.))
-  axes[0].plot(kin_U, label=r'$\gamma$ = 0.5')
-  axes[0].legend()
-  axes[0].set_yticks([0, 1])
-  axes[0].set_ylabel(r'Energy $(k_BT)$')
+  main((2., 1., 1., 1.))
+  axes[0, 0].plot(kin_U, label=r'$\gamma$ = 2.0')
+  main((0.5, 1., 1., 1.))
+  axes[0, 0].plot(kin_U, label=r'$\gamma$ = 0.5')
+  axes[0, 0].legend()
+  axes[0, 0].set_ylabel(r'Energy $(k_BT)$')
 
-  main((1., 2., 1.))
-  axes[1].plot(kin_U, label=r'$k_BT$ = 2.0')
-  main((1., 0.5, 1.))
-  axes[1].plot(kin_U, label=r'$k_BT$ = 0.5')
-  axes[1].legend()
-  axes[1].set_yticks([0, 1, 2])
-  axes[1].set_ylabel(r'Energy $(k_BT)$')
+  main((1., 2., 1., 1.))
+  axes[0, 1].plot(kin_U, label=r'$k_BT$ = 2.0')
+  main((1., 0.5, 1., 1.))
+  axes[0, 1].plot(kin_U, label=r'$k_BT$ = 0.5')
+  axes[0, 1].legend()
+  main((1., 1., 2., 1.))
+  axes[1, 0].plot(kin_U, label='m = 2.0')
+  main((1., 1., 0.5, 1.))
+  axes[1, 0].plot(kin_U, label='m = 0.5')
+  axes[1, 0].legend()
+  axes[1, 0].set_ylabel(r'Energy $(k_BT)$')
+  axes[1, 0].set_xlabel('Time (s)')
 
-  main((1., 1., 2.))
-  axes[2].plot(kin_U, label='m = 2.0')
-  main((1., 1., 0.5))
-  axes[2].plot(kin_U, label='m = 0.5')
-  axes[2].legend()
-  axes[2].set_yticks([0, 1, 2])
-  axes[2].set_ylabel(r'Energy $(k_BT)$')
-  axes[2].set_xlabel('Time (s)')
+  main((1., 1., 1., 2.))
+  axes[1, 1].plot(kin_U, label=r'$v_0 = 2.0$')
+  main((1., 1., 1., 0.5))
+  axes[1, 1].plot(kin_U, label=r'$v_0 = 0.5$')
+  axes[1, 1].legend()
+  axes[1, 1].set_xlabel('Time (s)')
 
-  axes[0].set_xticks([0, max_steps / 2,  max_steps])
-  axes[0].set_xticklabels([0, max_steps * dt / 2, max_steps * dt])
+  axes[0, 0].set_yticks([0, 1, 2])
+  axes[0, 0].set_xticks([0, max_steps / 2,  max_steps])
+  axes[0, 0].set_xticklabels([0, max_steps * dt / 2, max_steps * dt])
 
-  axes[0].plot([0, max_steps], [1, 1], color='gray', linestyle='--')
-  axes[1].plot([0, max_steps], [1, 1], color='gray', linestyle='--')
-  axes[1].plot([0, max_steps], [2, 2], color='gray', linestyle='--')
-  axes[1].plot([0, max_steps], [0.5, 0.5], color='gray', linestyle='--')
-  axes[2].plot([0, max_steps], [1, 1], color='gray', linestyle='--')
-  axes[2].plot([0, max_steps], [2, 2], color='gray', linestyle='--')
-  axes[2].plot([0, max_steps], [0.5, 0.5], color='gray', linestyle='--')
+  axes[0, 0].plot([0, max_steps], [1, 1], color='gray', linestyle='--')
+  axes[0, 1].plot([0, max_steps], [1, 1], color='gray', linestyle='--')
+  axes[0, 1].plot([0, max_steps], [2, 2], color='gray', linestyle='--')
+  axes[0, 1].plot([0, max_steps], [0.5, 0.5], color='gray', linestyle='--')
+  axes[1, 0].plot([0, max_steps], [1, 1], color='gray', linestyle='--')
+  axes[1, 1].plot([0, max_steps], [1, 1], color='gray', linestyle='--')
+
+  plt.show()
+
+
+cpdef void plot_pos():
+  fig, axes = plt.subplots(1, 2, figsize=(10, 6), sharex=True, sharey=True)
+  fig.suptitle('Distribution of particles')
+
+  main((1., 1., 1., 1.), 1)
+
+  axes[0].scatter(x[0], y[0])
+  axes[0].title.set_text('t = 0s')
+  axes[1].scatter(x[-1], y[-1])
+  axes[1].title.set_text('t = {}s'.format(t_max))
+
+  axes[0].set_xticks([0, 10])
+  axes[0].set_xlim((0, 10))
+  axes[0].set_yticks([0, 10])
+  axes[0].set_ylim((0, 10))
 
   plt.show()
