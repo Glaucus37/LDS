@@ -1,17 +1,12 @@
 import sys
-import math
 
 import functions as f
-import matplotlib.pyplot as plt
-import numpy as np
-from scipy.stats import norm
-# import random as rand
-
 
 
 if __name__ == '__main__':
     arg = sys.argv[1:]
 
+    # handle cases based on command line prompts
     if '-q' not in arg:
         if '-s' in arg:
             f.plot_simple()
@@ -19,3 +14,5 @@ if __name__ == '__main__':
             f.plot_pos()
         else:
             f.plot_full()
+    else:
+        f.main()
