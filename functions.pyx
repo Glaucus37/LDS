@@ -14,7 +14,7 @@ cython: language_level=3
 cdef int D = 2
 cdef int N = 100
 cdef double dt = 1e-2
-cdef double t_max = 1e2
+cdef double t_max = 1e1
 cdef double L = 10.
 cdef double v_init = 1.
 cdef double a_init = 2.
@@ -34,7 +34,7 @@ cdef double [:, :] vx = np.zeros((max_steps, N))
 cdef double [:, :] vy = np.zeros((max_steps, N))
 cdef double [:, :] ax = np.zeros((max_steps, N))
 cdef double [:, :] ay = np.zeros((max_steps, N))
-cdef double [:] kin_U = np.zeros(max_steps)
+cdef double [:] kin_U = np.zeros(max_steps - 1)
 # cdef long [:, :] k_neighbors = np.zeros((cells, 5))
 
 
@@ -81,17 +81,19 @@ cdef init_particles():
 
 # Simulation loop
 cdef void run_sim(object a):
+  cdef double m = a.m
   cdef int step = 0
+  cdef int i
   while step < max_steps - 1:
     next = step + 1
     verlet(step)
     a.run(step)
     vel_half_step(step)
-    kin_U[step] = kin_energy(next)
+    kin_U[step] = kin_energy(step, m)
 
     step += 1
 
-  kin_U[step] = kin_energy(next)
+  kin_U[step] = kin_energy(step, m)
 
   return
 
@@ -99,16 +101,19 @@ cdef void run_sim(object a):
 # Movement
 cdef void verlet(int step):
   cdef int next = step + 1
-  cdef double x_new
-  cdef double y_new
+  cdef double x_new, y_new
   cdef int i
   for i in range(N):
     x_new = x[step, i] + vx[step, i] * dt + 0.5 * ax[step, i] * dt_sq
     y_new = y[step, i] + vy[step, i] * dt + 0.5 * ay[step, i] * dt_sq
-    vx[next, i] = 0.5 * ax[step, i] * dt
-    vy[next, i] = 0.5 * ay[step, i] * dt
     x[next, i] = pbc(x_new)
     y[next, i] = pbc(y_new)
+    vx[next, i] = vx[step, i] + 0.5 * ax[step, i] * dt
+    vy[next, i] = vy[step, i] + 0.5 * ay[step, i] * dt
+    # print vx[step, i]
+  # print 'kin: ', kin_U[step]
+  # if step >= 10:
+    # exit()
 
   return
 
@@ -118,17 +123,18 @@ cdef void vel_half_step(int step):
   cdef int next = step + 1
   cdef int i
   for i in range(N):
-    vx[next, i] += 0.5 * ax[step, i] * dt
-    vy[next, i] += 0.5 * ay[step, i] * dt
+    vx[next, i] += 0.5 * ax[next, i] * dt
+    vy[next, i] += 0.5 * ay[next, i] * dt
 
   return
 
 
 cdef class accel:
-  cdef public double gamma, sigma
+  cdef public double gamma, sigma, m
   def __init__(self, args=(1., 1., 1.)):
     self.gamma = args[0]
     self.sigma = o_sqrt_dt * math.sqrt(2 * args[0] * args[1] * args[2])
+    self.m = args[2]
   def run(self, int step):
     cdef double g1, g2, a_x, a_y
     cdef int next = step + 1
@@ -137,8 +143,8 @@ cdef class accel:
       g1, g2 = gauss()
       a_x = ax[step, i]
       a_y = ay[step, i]
-      ax[next, i] = a_x - self.gamma * vx[step, i] + self.sigma * g1
-      ay[next, i] = a_y - self.gamma * vy[step, i] + self.sigma * g2
+      ax[next, i] = -self.gamma * vx[step, i] + self.sigma * g1
+      ay[next, i] = -self.gamma * vy[step, i] + self.sigma * g2
 
 
 
@@ -175,13 +181,14 @@ cdef double rms():
 
 
 # calculate average kinetic energy of particles
-cpdef double kin_energy(int step):
+cpdef double kin_energy(int step, double m):
   cdef double kin = 0
   cdef int i
   for i in range(N):
-    kin += 0.5 * (vx[step, i] ** 2 + vy[step, i] ** 2)
+    kin += (vx[step, i] ** 2 + vy[step, i] ** 2)
+    # print(kin)
 
-  return kin / N
+  return 0.5 * kin / (N * m)
 
 
 # Set neighbors for each cell
@@ -214,6 +221,7 @@ cdef long [:, :] set_neighbors():
 cpdef void plot_simple():
   fig, axes = plt.subplots(2, 1, figsize=(8, 6))
 
+  main()
   axes[0].plot(kin_U)
   axes[0].plot([0, max_steps], [1, 1], color='gray', linestyle='--')
   axes[0].set_xticks([0, max_steps / 2,  max_steps])
@@ -242,6 +250,7 @@ cpdef void plot_full():
   fig, axes = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
   fig.suptitle('Energy over time')
 
+  main()
   axes[0].plot(kin_U, label=r'$\gamma$ = 1.0')
   axes[1].plot(kin_U, label=r'$k_BT$ = 1.0')
   axes[2].plot(kin_U, label='m = 1.')

@@ -11,9 +11,6 @@ from scipy.stats import norm
 
 if __name__ == '__main__':
     arg = sys.argv[1:]
-    const = [1., 1., 1.]
-
-    f.main()
 
     if '-q' not in arg:
         if '-s' in arg:
