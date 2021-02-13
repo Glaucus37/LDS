@@ -5,6 +5,7 @@ import numpy as np
 cimport numpy as cnp
 import random as rand
 import matplotlib.pyplot as plt
+from matplotlib import gridspec
 
 # static variable definitions
 cdef int D = 2
@@ -253,7 +254,8 @@ cpdef void plot_simple():
 
   main()
   axes[0].plot(kin_U)
-  axes[0].plot([0, max_steps], [1, 1], color='gray', linestyle='--')
+  axes[0].plot([0, max_steps], [1, 1], color='r', linestyle='-.')
+  axes[0]. plot([0, max_steps], [0, 0], color='gray', linestyle='-')
   axes[0].set_xticks([0, max_steps / 2,  max_steps])
   axes[0].set_xticklabels([0, max_steps * dt / 2, max_steps * dt])
   axes[0].set_xlabel('Time (s)')
@@ -264,13 +266,15 @@ cpdef void plot_simple():
   cdef double mu = 0.
   cdef double sig = 1.
   count, bins, ignored = axes[1].hist(vx, 80, density=True)
-  axes[1].plot(bins, 1/(1 * np.sqrt(2 * np.pi)) * \
+  axes[1].plot(bins, 1/(sig * np.sqrt(2 * np.pi)) * \
             np.exp( - (bins - mu)**2 / (2 * sig**2) ),
-            linewidth=2, color='gray', linestyle='--')
+            linewidth=2, color='gray', linestyle='--',
+            label=r'$\frac{1}{\sigma\sqrt{2\pi}}e^{\frac{-(x-\mu)^2}{2\sigma^2}}$')
   axes[1].set_xlim([np.percentile(bins, 0.5), np.percentile(bins, 99.5)])
   axes[1].set_xlabel('Velocity')
   axes[1].set_ylabel('Relative Frequency')
   axes[1].title.set_text('Histogram of Particle Velocity')
+  axes[1].legend()
 
   fig.tight_layout(pad=3.)
   plt.show()
@@ -283,7 +287,7 @@ cpdef void plot_simple():
     # 3. mass
     # 4. initial velocity
 cpdef void plot_full():
-  fig, axes = plt.subplots(2, 2, figsize=(10, 8), sharex=True, sharey=True)
+  fig, axes = plt.subplots(2, 2, figsize=(10, 8), sharex=False, sharey=True)
   fig.suptitle('Dependency of Energy on Initial Conditions')
 
   axes[0, 0].plot([0, max_steps], [1, 1], color='r', linestyle='-.')
@@ -307,33 +311,42 @@ cpdef void plot_full():
   axes[0, 0].plot(kin_U, label=r'$\gamma$ = 2.0')
   main((0.5, 1., 1., 1.))
   axes[0, 0].plot(kin_U, label=r'$\gamma$ = 0.5')
-  axes[0, 0].legend()
+  axes[0, 0].set_xlim(-0.1, max_steps / 8)
+  axes[0, 0].set_xticks([0, max_steps / 16,  max_steps / 8])
+  axes[0, 0].set_xticklabels([0, max_steps * dt / 16, max_steps * dt / 8])
   axes[0, 0].set_ylabel(r'Energy $(k_BT)$')
+  axes[0, 0].legend()
 
   main((1., 2., 1., 1.))
   axes[0, 1].plot(kin_U, label=r'$k_BT$ = 2.0')
   main((1., 0.5, 1., 1.))
   axes[0, 1].plot(kin_U, label=r'$k_BT$ = 0.5')
+  axes[0, 1].set_xticks([0, max_steps / 2,  max_steps])
+  axes[0, 1].set_xticklabels([0, max_steps * dt / 2, max_steps * dt])
   axes[0, 1].legend()
 
   main((1., 1., 2., 1.))
   axes[1, 0].plot(kin_U, label='m = 2.0')
   main((1., 1., 0.5, 1.))
   axes[1, 0].plot(kin_U, label='m = 0.5')
-  axes[1, 0].legend()
+  axes[1, 0].set_xticks([0, max_steps / 2,  max_steps])
+  axes[1, 0].set_xticklabels([0, max_steps * dt / 2, max_steps * dt])
   axes[1, 0].set_ylabel(r'Energy $(k_BT)$')
   axes[1, 0].set_xlabel('Time (s)')
+  axes[1, 0].legend()
 
   main((1., 1., 1., 2.))
   axes[1, 1].plot(kin_U, label=r'$v_0 = 2.0$')
   main((1., 1., 1., 0.5))
   axes[1, 1].plot(kin_U, label=r'$v_0 = 0.5$')
-  axes[1, 1].legend()
+  axes[1 ,1].set_xticks([0, max_steps / 2,  max_steps])
+  axes[1 ,1].set_xticklabels([0, max_steps * dt / 2, max_steps * dt])
   axes[1, 1].set_xlabel('Time (s)')
+  axes[1, 1].legend()
 
   axes[0, 0].set_yticks([0, 1, 2])
-  axes[0, 0].set_xticks([0, max_steps / 2,  max_steps])
-  axes[0, 0].set_xticklabels([0, max_steps * dt / 2, max_steps * dt])
+
+  plt.tight_layout(pad=1.)
 
   plt.show()
 
@@ -342,19 +355,39 @@ cpdef void plot_full():
   # 1. initial positions of particles
   # 2. end positions of particles
 cpdef void plot_pos():
-  fig, axes = plt.subplots(1, 2, figsize=(10, 6), sharex=True, sharey=True)
+  fig, axes = plt.subplots(figsize=(8, 6))
   fig.suptitle('Distribution of particles')
 
   main((1., 1., 1., 1.), 1)
 
-  axes[0].scatter(x[0], y[0])
-  axes[0].title.set_text('t = 0s')
-  axes[1].scatter(x[-1], y[-1])
-  axes[1].title.set_text('t = {}s'.format(t_max))
+  plt.subplot2grid((2, 2), (0, 0), colspan=1, rowspan=1)
+  plt.scatter(x[0], y[0])
+  plt.xlim(0, 10)
+  plt.xticks([0, 10])
+  plt.xlabel('x')
+  plt.ylim(0, 10)
+  plt.yticks([0, 10])
+  plt.ylabel('y')
+  plt.title('t = 0s')
 
-  axes[0].set_xticks([0, 10])
-  axes[0].set_xlim((0, 10))
-  axes[0].set_yticks([0, 10])
-  axes[0].set_ylim((0, 10))
+  plt.subplot2grid((2, 2), (0, 1), colspan=1, rowspan=1)
+  plt.scatter(x[-1], y[-1])
+  plt.xlim(0, 10)
+  plt.xticks([0, 10])
+  plt.xlabel('x')
+  plt.ylim(0, 10)
+  plt.yticks([0, 10])
+  plt.ylabel('y')
+  plt.title('t = {}s'.format(t_max))
+
+  plt.subplot2grid((2, 2), (1, 0), colspan=2, rowspan=1)
+  plt.plot([0, max_steps], [0, 0], color='gray', linestyle='-')
+  plt.plot([0, max_steps], [1, 1], color='r', linestyle='-.')
+  plt.plot(kin_U)
+  plt.xticks([0, max_steps / 2, max_steps], [0, t_max / 2, t_max])
+  plt.xlabel('Time (s)')
+  plt.ylabel(r'Energy $(k_BT)$')
+
+  plt.tight_layout(pad=2.)
 
   plt.show()
