@@ -1,3 +1,9 @@
+"""
+@author: Bruno Hentschel (https://github.com/Glaucus37)
+"""
+
+# Section 0: Imports and declarations
+
 import sys
 import math
 from cython import array
@@ -8,19 +14,22 @@ import matplotlib.pyplot as plt
 from matplotlib import gridspec
 
 # static variable definitions
-cdef int D = 2
-cdef int N = 100
-cdef double t_max = 1e1
-cdef double L = 10.
-cdef double a_init = 2.
+cdef int D = 2 # Number of dimensions
+cdef int N = 10 # Number of particles
+cdef double t_max = 1e1 # maximum time to simulate
+cdef double L = 10. # Dimension length
+cdef double a_init = 2. # Initial acceleration
+cdef double r_lim = 2.
 
-cdef double dt = 1e-2
+cdef double dt = 1e-2 # Time step
 cdef double dt_sq = dt ** 2
-cdef double o_sqrt_dt = 1 / math.sqrt(dt)
+cdef double o_sqrt_dt = 1 / np.sqrt(dt) # over sqrt(dt)
 cdef int max_steps = int(t_max / dt)
 
-cdef int lat_size = 5
+cdef int lat_size = 4
+cdef double cell_size = L / lat_size
 cdef long cells = lat_size ** 2
+cdef int list_size = N + cells
 
 
 # array declarations
@@ -31,14 +40,16 @@ cdef double [:, :] vy = np.zeros((max_steps, N), dtype=np.double)
 cdef double [:, :] ax = np.zeros((max_steps, N), dtype=np.double)
 cdef double [:, :] ay = np.zeros((max_steps, N), dtype=np.double)
 cdef double [:] kin_U = np.zeros(max_steps, dtype=np.double)
-# cdef long [:, :] k_neighbors = np.zeros((cells, 5))
+cdef long [:, :] k_neighbors = np.zeros((cells, 5), dtype=np.int32)
+cdef int [:] k_list = np.zeros(list_size, dtype=np.int32)
 
 
+# Section I: main function
 
 # main routine which sets up and executes simulation with given parameters
 # paramateres are initialized to 1 by default
 # all parameters in computational units
-cpdef void main(object args=(1., 1., 1., 1.), int init=0):
+cpdef void main((double, double, double, double) args=(1., 1., 1., 1.), int init=0):
   cdef double v_0
 
   a = accel(args) # initialize acceleration-class object
@@ -47,8 +58,11 @@ cpdef void main(object args=(1., 1., 1., 1.), int init=0):
   run_sim(a) # execute simulation with a holding the appropiate params
 
 
+# Section II: Function definition
+
 # set all relevant arrays to zeros for the upcoming run
 cdef void setup(double v_0, int init):
+  global cells, max_steps, N
   rand.seed() # randomize the run's seed
   # Array declarations
   x = np.zeros((max_steps, N))
@@ -60,14 +74,18 @@ cdef void setup(double v_0, int init):
   kin_U = np.zeros(max_steps)
 
   init_particles(v_0, init) # once arrays are initialized, set initial values
+  set_neighbors()
 
 
 # Initialize positions, velocities and accelerations for all particles
 cdef void init_particles(double v_0, int init):
   cdef double theta
+  cdef double vx_cm = 0.
+  cdef double vy_cm = 0.
 
   cdef int i
   for i in range(N):
+
     if init == 0: # standard random initialization
       x[0, i] = L * <double>rand.random()
       y[0, i] = L * <double>rand.random()
@@ -79,10 +97,19 @@ cdef void init_particles(double v_0, int init):
     theta = <double>(2 * math.pi * rand.random())
     vx[0, i] = v_0 * math.cos(theta)
     vy[0, i] = v_0 * math.sin(theta)
+    vx_cm += vx[0, i]
+    vy_cm += vy[0, i]
 
     theta = <double>(2 * math.pi * rand.random())
     ax[0, i] = a_init * math.cos(theta)
     ay[0, i] = a_init * math.sin(theta)
+
+  vx_cm /= N
+  vy_cm /= N
+
+  for i in range(N):
+    vx[0, i] -= vx_cm
+    vy[0, i] -= vy_cm
 
 
 # Simulation loop
@@ -133,16 +160,18 @@ cdef void verlet(int step):
   # seems to have done the trick
 cdef class accel:
   cdef public double gamma, sigma, m # variables that will be accessed outside
-  def __init__(self, args):
+  def __init__(self, (double, double, double, double) args):
     # args have a default initialization at main()
     # the order of arguments accel recieves is critical! Beware any changes!
     self.gamma = args[0]
-    self.sigma = o_sqrt_dt * math.sqrt(2 * args[0] * args[1] * args[2])
+    self.sigma = o_sqrt_dt * np.sqrt(2 * args[0] * args[1] * args[2])
     self.m = args[2]
   def run(self, int step):
     # what was previously the accel() function became the run() method
     cdef double g1, g2, a_x, a_y
     cdef int next = step + 1
+
+    BulkForce(next)
 
     cdef int i
     for i in range(N):
@@ -178,7 +207,7 @@ cdef (double, double) gauss():
     v1 = 2. * rand.random() - 1.
     v2 = 2. * rand.random() - 1.
     r_sq = v1 ** 2 + v2 ** 2
-  fac = s_dev * math.sqrt(-2. * math.log(r_sq) / r_sq)
+  fac = s_dev * np.sqrt(-2. * np.log(r_sq) / r_sq)
   return (v1 * fac, v2 * fac)
 
 
@@ -214,11 +243,11 @@ cpdef double kin_energy(int step, double m):
 
 
 # Set neighbors for each cell
-cdef long [:, :] set_neighbors():
+cdef void set_neighbors():
   # any cell always has 9 neighbors (including itself), 4 of
     # which will have it as their neighbor
   # as such, we can safely assign 5 neighbors to each cell
-  cdef long [:, :] neighbors = np.zeros((cells, 5), dtype=np.int32)
+  global k_neighbors
   cdef long [:] naive_neighbors
 
   cdef int k, i
@@ -241,10 +270,71 @@ cdef long [:, :] set_neighbors():
       naive_neighbors[3] -= cells
       naive_neighbors[4] -= cells
 
-    neighbors[k] = naive_neighbors # append k'th neighbors to neighbors list
+    k_neighbors[k] = naive_neighbors # append k'th neighbors to neighbors list
 
-  return neighbors
 
+cdef void BulkForce(int step):
+  global N, cells
+  global x, y
+  global k_list
+  # k_list includes 'N' particles, followed by 'cells' cells
+  cdef int i, j, n, k, m1, m2, j1, j2
+
+  for j in range(N, list_size):
+    try:
+      k_list[j] = -1
+    except IndexError:
+      print 'j: ', j
+
+  for n in range(N):
+    try:
+      k = int(x[step, n] / cell_size) + int(y[step, n] / cell_size) * lat_size + N
+      k_list[n] = k_list[k]
+      k_list[k] = n
+    except IndexError:
+      print 'k, n: ', k, n
+
+  for k in range(cells):
+    m1 = k + N
+    for i in range(5):
+      try:
+        m2 = k_neighbors[k, i] + N
+        j1 = k_list[m1]
+      except IndexError:
+        print 'm2, j1: ', m2, j1
+      while j1 >= 0:
+        try:
+          j2 = k_list[m2]
+        except IndexError:
+          print 'j2: ', j2
+        while j2 >= 0:
+          if j2 < j1 or m1 != m2:
+            fuerza(j1, m1, j2, m2, step)
+          j2 = k_list[j2]
+        j1 = k_list[j1]
+
+
+cdef void fuerza(j1, m1, j2, m2, step):
+  global x, y
+  global cell_size
+  cdef double f_n
+
+  cdef double dx, dy, r_2
+  dx = pbc(x[step, j2] - x[step, j1]) - 0.5 * L
+  dy = pbc(y[step, j2] - y[step, j1]) - 0.5 * L
+  r_2 = np.sqrt(dx ** 2 + dy ** 2)
+  """
+  if r_2 < cell_size:
+    f_n = LennerdJones(r_2)
+    ax[step, j1] += f_n
+  """
+
+cdef double LennerdJones(double r):
+  pass
+  # print('L-J')
+
+
+# Section III: Plots
 
 # -s command, makes two plots:
   # 1. system's energy vs. t
@@ -253,7 +343,7 @@ cpdef void plot_simple():
   fig, axes = plt.subplots(2, 1, figsize=(8, 6))
 
   main()
-  axes[0].plot(kin_U)
+  axes[0].plot(kin_U, linewidth=1)
   axes[0].plot([0, max_steps], [1, 1], color='r', linestyle='-.')
   axes[0]. plot([0, max_steps], [0, 0], color='gray', linestyle='-')
   axes[0].set_xticks([0, max_steps / 2,  max_steps])
@@ -268,7 +358,7 @@ cpdef void plot_simple():
   count, bins, ignored = axes[1].hist(vx, 80, density=True)
   axes[1].plot(bins, 1/(sig * np.sqrt(2 * np.pi)) * \
             np.exp( - (bins - mu)**2 / (2 * sig**2) ),
-            linewidth=2, color='gray', linestyle='--',
+            linewidth=2, color='r', linestyle='-.',
             label=r'$\frac{1}{\sigma\sqrt{2\pi}}e^{\frac{-(x-\mu)^2}{2\sigma^2}}$')
   axes[1].set_xlim([np.percentile(bins, 0.5), np.percentile(bins, 99.5)])
   axes[1].set_xlabel('Velocity')
@@ -302,15 +392,15 @@ cpdef void plot_full():
   axes[1, 1].plot([0, max_steps], [0, 0], color='gray', linestyle='-')
 
   main()
-  axes[0, 0].plot(kin_U, label=r'$\gamma$ = 1.0')
-  axes[0, 1].plot(kin_U, label=r'$k_BT$ = 1.0')
-  axes[1, 0].plot(kin_U, label='m = 1.0')
-  axes[1, 1].plot(kin_U, label=r'$v_0 = 1.0$')
+  axes[0, 0].plot(kin_U, label=r'$\gamma$ = 1.0', linewidth=1)
+  axes[0, 1].plot(kin_U, label=r'$k_BT$ = 1.0', linewidth=1)
+  axes[1, 0].plot(kin_U, label='m = 1.0', linewidth=1)
+  axes[1, 1].plot(kin_U, label=r'$v_0 = 1.0$', linewidth=1)
 
   main((2., 1., 1., 1.))
-  axes[0, 0].plot(kin_U, label=r'$\gamma$ = 2.0')
+  axes[0, 0].plot(kin_U, label=r'$\gamma$ = 2.0', linewidth=1)
   main((0.5, 1., 1., 1.))
-  axes[0, 0].plot(kin_U, label=r'$\gamma$ = 0.5')
+  axes[0, 0].plot(kin_U, label=r'$\gamma$ = 0.5', linewidth=1)
   axes[0, 0].set_xlim(-0.1, max_steps / 8)
   axes[0, 0].set_xticks([0, max_steps / 16,  max_steps / 8])
   axes[0, 0].set_xticklabels([0, max_steps * dt / 16, max_steps * dt / 8])
@@ -318,17 +408,17 @@ cpdef void plot_full():
   axes[0, 0].legend()
 
   main((1., 2., 1., 1.))
-  axes[0, 1].plot(kin_U, label=r'$k_BT$ = 2.0')
+  axes[0, 1].plot(kin_U, label=r'$k_BT$ = 2.0', linewidth=1)
   main((1., 0.5, 1., 1.))
-  axes[0, 1].plot(kin_U, label=r'$k_BT$ = 0.5')
+  axes[0, 1].plot(kin_U, label=r'$k_BT$ = 0.5', linewidth=1)
   axes[0, 1].set_xticks([0, max_steps / 2,  max_steps])
   axes[0, 1].set_xticklabels([0, max_steps * dt / 2, max_steps * dt])
   axes[0, 1].legend()
 
   main((1., 1., 2., 1.))
-  axes[1, 0].plot(kin_U, label='m = 2.0')
+  axes[1, 0].plot(kin_U, label='m = 2.0', linewidth=1)
   main((1., 1., 0.5, 1.))
-  axes[1, 0].plot(kin_U, label='m = 0.5')
+  axes[1, 0].plot(kin_U, label='m = 0.5', linewidth=1)
   axes[1, 0].set_xticks([0, max_steps / 2,  max_steps])
   axes[1, 0].set_xticklabels([0, max_steps * dt / 2, max_steps * dt])
   axes[1, 0].set_ylabel(r'Energy $(k_BT)$')
@@ -336,9 +426,9 @@ cpdef void plot_full():
   axes[1, 0].legend()
 
   main((1., 1., 1., 2.))
-  axes[1, 1].plot(kin_U, label=r'$v_0 = 2.0$')
+  axes[1, 1].plot(kin_U, label=r'$v_0 = 2.0$', linewidth=1)
   main((1., 1., 1., 0.5))
-  axes[1, 1].plot(kin_U, label=r'$v_0 = 0.5$')
+  axes[1, 1].plot(kin_U, label=r'$v_0 = 0.5$', linewidth=1)
   axes[1 ,1].set_xticks([0, max_steps / 2,  max_steps])
   axes[1 ,1].set_xticklabels([0, max_steps * dt / 2, max_steps * dt])
   axes[1, 1].set_xlabel('Time (s)')
@@ -355,10 +445,16 @@ cpdef void plot_full():
   # 1. initial positions of particles
   # 2. end positions of particles
 cpdef void plot_pos():
+  global k_list
+
   fig, axes = plt.subplots(figsize=(8, 6))
   fig.suptitle('Distribution of particles')
 
   main((1., 1., 1., 1.), 1)
+
+  cdef int k
+  for k in range(list_size):
+    print k, k_list[k]
 
   plt.subplot2grid((2, 2), (0, 0), colspan=1, rowspan=1)
   plt.scatter(x[0], y[0])
@@ -371,6 +467,13 @@ cpdef void plot_pos():
   plt.title('t = 0s')
 
   plt.subplot2grid((2, 2), (0, 1), colspan=1, rowspan=1)
+  cdef int i, j
+  for i in range(lat_size):
+    if i:
+      for j in range(lat_size):
+        if j:
+          plt.plot([0, L], [j * cell_size, j * cell_size], color='gray', linestyle='-')
+          plt.plot([i * cell_size, i * cell_size], [0, L], color='gray', linestyle='-')
   plt.scatter(x[-1], y[-1])
   plt.xlim(0, 10)
   plt.xticks([0, 10])
@@ -383,7 +486,7 @@ cpdef void plot_pos():
   plt.subplot2grid((2, 2), (1, 0), colspan=2, rowspan=1)
   plt.plot([0, max_steps], [0, 0], color='gray', linestyle='-')
   plt.plot([0, max_steps], [1, 1], color='r', linestyle='-.')
-  plt.plot(kin_U)
+  plt.plot(kin_U, linewidth=1)
   plt.xticks([0, max_steps / 2, max_steps], [0, t_max / 2, t_max])
   plt.xlabel('Time (s)')
   plt.ylabel(r'Energy $(k_BT)$')
