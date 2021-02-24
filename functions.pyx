@@ -281,57 +281,77 @@ cdef void BulkForce(int step):
   cdef int i, j, n, k, m1, m2, j1, j2
 
   for j in range(N, list_size):
+    k_list[j] = -1
+    """
     try:
       k_list[j] = -1
     except IndexError:
       print 'j: ', j
+    """
 
   for n in range(N):
+    k = int(x[step, n] / cell_size) + int(y[step, n] / cell_size) * lat_size + N
+    k_list[n] = k_list[k]
+    k_list[k] = n
+    """
     try:
       k = int(x[step, n] / cell_size) + int(y[step, n] / cell_size) * lat_size + N
       k_list[n] = k_list[k]
       k_list[k] = n
     except IndexError:
       print 'k, n: ', k, n
+    """
 
   for k in range(cells):
     m1 = k + N
     for i in range(5):
+      m2 = k_neighbors[k, i] + N
+      j1 = k_list[m1]
+      """
       try:
         m2 = k_neighbors[k, i] + N
         j1 = k_list[m1]
       except IndexError:
         print 'm2, j1: ', m2, j1
+      """
       while j1 >= 0:
+        j2 = k_list[m2]
+        """
         try:
           j2 = k_list[m2]
         except IndexError:
           print 'j2: ', j2
+        """
         while j2 >= 0:
           if j2 < j1 or m1 != m2:
-            fuerza(j1, m1, j2, m2, step)
+            force(j1, m1, j2, m2, step)
           j2 = k_list[j2]
         j1 = k_list[j1]
 
 
-cdef void fuerza(j1, m1, j2, m2, step):
+cdef void force(j1, m1, j2, m2, step):
   global x, y
   global cell_size
   cdef double f_n
+  cdef int next = step + 1
 
-  cdef double dx, dy, r_2
-  dx = pbc(x[step, j2] - x[step, j1]) - 0.5 * L
-  dy = pbc(y[step, j2] - y[step, j1]) - 0.5 * L
-  r_2 = np.sqrt(dx ** 2 + dy ** 2)
-  """
-  if r_2 < cell_size:
-    f_n = LennerdJones(r_2)
-    ax[step, j1] += f_n
-  """
+  cdef double dx, dy, rr
+  dx = pbc(x[step, j2] - x[step, j1]) - L / 2
+  dy = pbc(y[step, j2] - y[step, j1]) - L / 2
+  rr = np.sqrt(dx ** 2 + dy ** 2)
+
+  if rr < cell_size:
+    f_n = LennerdJones(rr)
+    fnx = f_n * dx / rr
+    fny = f_n * dy / rr
+    ax[next, j1] += fnx
+    ay[next, j1] += fny
+    ax[next, j2] -= fnx
+    ay[next, j2] -= fny
+
 
 cdef double LennerdJones(double r):
-  pass
-  # print('L-J')
+  return 24 / r * (2 * (1 / r)**12 - (1 / r)**6)
 
 
 # Section III: Plots
