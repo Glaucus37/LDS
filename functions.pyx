@@ -171,7 +171,7 @@ cdef class accel:
     cdef double g1, g2, a_x, a_y
     cdef int next = step + 1
 
-    BulkForce(next)
+    BulkForce(step)
 
     cdef int i
     for i in range(N):
@@ -279,49 +279,23 @@ cdef void BulkForce(int step):
   global k_list
   # k_list includes 'N' particles, followed by 'cells' cells
   cdef int i, j, n, k, m1, m2, j1, j2
+  cdef int next = step + 1
 
   for j in range(N, list_size):
     k_list[j] = -1
-    """
-    try:
-      k_list[j] = -1
-    except IndexError:
-      print 'j: ', j
-    """
 
   for n in range(N):
-    k = int(x[step, n] / cell_size) + int(y[step, n] / cell_size) * lat_size + N
+    k = int(x[next, n] / cell_size) + int(y[next, n] / cell_size) * lat_size + N
     k_list[n] = k_list[k]
     k_list[k] = n
-    """
-    try:
-      k = int(x[step, n] / cell_size) + int(y[step, n] / cell_size) * lat_size + N
-      k_list[n] = k_list[k]
-      k_list[k] = n
-    except IndexError:
-      print 'k, n: ', k, n
-    """
 
   for k in range(cells):
     m1 = k + N
     for i in range(5):
       m2 = k_neighbors[k, i] + N
       j1 = k_list[m1]
-      """
-      try:
-        m2 = k_neighbors[k, i] + N
-        j1 = k_list[m1]
-      except IndexError:
-        print 'm2, j1: ', m2, j1
-      """
       while j1 >= 0:
         j2 = k_list[m2]
-        """
-        try:
-          j2 = k_list[m2]
-        except IndexError:
-          print 'j2: ', j2
-        """
         while j2 >= 0:
           if j2 < j1 or m1 != m2:
             force(j1, m1, j2, m2, step)
@@ -336,12 +310,12 @@ cdef void force(j1, m1, j2, m2, step):
   cdef int next = step + 1
 
   cdef double dx, dy, rr
-  dx = pbc(x[step, j2] - x[step, j1]) - L / 2
-  dy = pbc(y[step, j2] - y[step, j1]) - L / 2
+  dx = pbc(x[next, j2] - x[next, j1]) - L / 2
+  dy = pbc(y[next, j2] - y[next, j1]) - L / 2
   rr = np.sqrt(dx ** 2 + dy ** 2)
 
-  if rr < cell_size:
-    f_n = LennerdJones(rr)
+  if rr < cell_size and rr > 0.8:
+    f_n = LennerdJones(rr, step)
     fnx = f_n * dx / rr
     fny = f_n * dy / rr
     ax[next, j1] += fnx
