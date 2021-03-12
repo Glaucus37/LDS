@@ -12,6 +12,7 @@ class Particle:
     self.cluster = n
 
     self.next_p = None
+    self.prev_p = None
 
     self.x = L * rand.random()
     self.y = L * rand.random()
@@ -30,6 +31,7 @@ class Cluster:
     a = 1
 
     self.first_p = p
+    self.last_p = p
 
     self.index = p.index
     self.mass = 1
@@ -188,7 +190,7 @@ cpdef double RunSim():
     VelHalfStep()
 
 
-    # JoinClusters()
+    # NeighbouringCells()
 
     kin_U[step] = KinEnergy()
 
@@ -261,8 +263,35 @@ cdef void SetKList():
       k_list[k] = i
 
 
+cdef NeighbouringCells():
+  global N, n_clusters
+  global c_list, p_list
+  global k_list
+
+  cdef int i, j, m1, m2, j1, j2
+  for i in range(cells):
+    m1 = k + N
+    for j in range(5):
+      m2 = k_neighbors[k, i] + N
+      j1 = k_list[m1]
+      while j1 >= 0:
+        j2 = k_list[m2]
+        while j2 >= 0:
+          if j2 < j1 or m1 != m2:
+            c1 = p_list[j1].cluster
+            c2 = p_list[j2].cluster
+            c1 != c2:
+              if c_list[c1].mass < c_list[c2].mass
+                JoinClusters(c2, c1)
+
+
+
+cdef JoinClusters(int m1, int m2):
+
+
+
 cdef KinEnergy():
-  global n_clusters
+  global N, n_clusters
   global c_list
   cdef double kin = 0
 
@@ -271,7 +300,7 @@ cdef KinEnergy():
     c = c_list[i]
     kin += c.mass * (c.vx**2 + c.vy**2)
 
-  kin *= 0.5
+  kin *= 0.5 / N
 
   return kin
 
@@ -283,13 +312,21 @@ cpdef void plot():
   global kin_U
   global N, max_steps
   global k_list
+  print(N)
 
   fig, ax = plt.subplots(figsize=(8, 8))
 
   plt.subplot2grid((2, 2), (0, 0), colspan=1, rowspan=1)
+  cdef double[:] x, y
   cdef int i, j
+  x = np.zeros(N)
+  y = np.zeros(N)
   for i in range(N):
-    plt.scatter(p_list[i].x, p_list[i].y)
+    x[i] = p_list[i].x
+    y[i] = p_list[i].y
+  for i in range(N):
+    print(x[i], y[i])
+  plt.scatter(x, y, s=400)
 
   cdef double x_i, y_j
   for i in range(lat_size):
@@ -301,9 +338,15 @@ cpdef void plot():
           plt.plot([0, L], [y_j, y_j], color='gray', linestyle='-')
           plt.plot([x_i, x_i], [0, L], color='gray', linestyle='-')
 
+  global L, lat_size
+  plt.xticks(np.linspace(0, L, lat_size + 1))
+  plt.yticks(np.linspace(0, L, lat_size + 1))
+  plt.xlim(0, 10)
+  plt.ylim(0, 10)
 
   plt.subplot2grid((2, 2), (1, 0), colspan=2, rowspan=1)
-  plt.plot(kin_U)
-  plt.plot([0, max_steps], [1, 1], color='gray', linestyle='--')
+  plt.plot(kin_U, linewidth=1)
+  plt.plot([0, max_steps], [1, 1],
+    color='gray', linestyle='--')
 
   plt.show()
