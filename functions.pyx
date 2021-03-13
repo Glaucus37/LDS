@@ -12,7 +12,6 @@ class Particle:
     self.cluster = n
 
     self.next_p = None
-    self.prev_p = None
 
     self.x = L * rand.random()
     self.y = L * rand.random()
@@ -23,6 +22,11 @@ class Particle:
 
     if self.next_p is not None:
       self.next_p.update_pos(dx, dy)
+
+  def update_cluster(self, int c):
+    self.cluster = c
+    if self.next_p is not None:
+      self.next_p.update_cluster(c)
 
 
 class Cluster:
@@ -53,8 +57,8 @@ class Cluster:
     self.vy += 0.5 * self.ay * dt
 
   def langevin(self, double g1, double g2):
-    self.ax = -self.gamma * self.mass * self.vx + self.sigma * g1
-    self.ay = -self.gamma * self.mass * self.vy + self.sigma * g2
+    self.ax = self.mass * (-self.gamma * self.vx + self.sigma * g1)
+    self.ay = self.mass * (-self.gamma * self.vy + self.sigma * g2)
 
 
 
@@ -72,13 +76,13 @@ cdef PBC(double x):
 
 
 cdef double t_max, dt, dt_sq, o_sqrt_dt
-cdef double gamma, sigma
+cdef double gamma, sigma, kBT
 cdef double[:] kin_U
 cdef int max_steps
 
 cpdef void TimeSetup(double run_t, double run_dt):
   global t_max, dt, max_steps, dt_sq, o_sqrt_dt
-  global gamma, sigma
+  global gamma, sigma, kBT
   global max_steps
   global kin_U
   rand.seed()
@@ -90,26 +94,27 @@ cpdef void TimeSetup(double run_t, double run_dt):
   o_sqrt_dt = 1 / np.sqrt(dt)
 
   gamma = 1
-  sigma = o_sqrt_dt * np.sqrt(2 * 1)
+  kBT = 1
+  sigma = o_sqrt_dt * np.sqrt(2 * gamma * kBT)
 
   kin_U = np.zeros(max_steps)
 
 
 cdef double L, cell_size
 cdef int lat_size, cells
-cdef long[:, :] k_neighbors
+cdef long[:, :] k_neighbours
 
 cpdef void InitBoard(double l, int c):
   global L, cell_size
   global lat_size, cells
-  global k_neighbors
+  global k_neighbours
 
   L = l
   lat_size = c
   cell_size = l / c
   cells = lat_size**2
 
-  k_neighbors = np.zeros((cells, 5), dtype=np.int32)
+  k_neighbours = np.zeros((cells, 5), dtype=np.int32)
 
 
 cdef int N, n_clusters
@@ -149,28 +154,28 @@ cpdef void InitClusters(int n, double l):
     c_list[i].vy += vy_cm
 
 
-cdef void SetNeighbors():
-  global k_neighbors
+cdef void Setneighbours():
+  global k_neighbours
   global lat_size
   cdef int[:] naive_neigbors
 
   cdef int k, i
   for k in range(cells):
-    naive_neighbors = np.array([0, 1, lat_size-1, lat_size, lat_size+1])
+    naive_neighbours = np.array([0, 1, lat_size-1, lat_size, lat_size+1])
     for i in range(5):
-      naive_neighbors[i] += k
+      naive_neighbours[i] += k
 
   if k % lat_size == 0:
-    naive_neighbors[2] += lat_size
+    naive_neighbours[2] += lat_size
   elif k % lat_size == lat_size - 1:
-    naive_neighbors[1] -= lat_size
-    naive_neighbors[4] -= lat_size
+    naive_neighbours[1] -= lat_size
+    naive_neighbours[4] -= lat_size
   if k // lat_size == lat_size - 1:
-    naive_neighbors[2] -= cells
-    naive_neighbors[3] -= cells
-    naive_neighbors[4] -= cells
+    naive_neighbours[2] -= cells
+    naive_neighbours[3] -= cells
+    naive_neighbours[4] -= cells
 
-  k_neighbors[k] = naive_neighbors
+  k_neighbours[k] = naive_neighbours
 
 
 cdef int step, next
@@ -189,13 +194,24 @@ cpdef double RunSim():
     Accel()
     VelHalfStep()
 
-
-    # NeighbouringCells()
+    CheckNeighbours()
 
     kin_U[step] = KinEnergy()
 
     step += 1
-
+  """
+  global k_list
+  global n_clusters
+  cdef int i, j
+  for i in range(n_clusters):
+    c = c_list[i]
+    print 'cluster {} ({}):'.format(c.index, c.mass)
+    p = c.first_p
+    print '\t{} ({})'.format(p.index, p.cluster)
+    while p.next_p is not None:
+      p = p.next_p
+      print '\t{} ({})'.format(p.index, p.cluster)
+  """
   kin_U[step] = KinEnergy()
 
   t1 = time.perf_counter()
@@ -237,57 +253,113 @@ cdef (double, double) gauss(double s_d=1.):
 
 
 cdef Accel():
-  global N
+  global n_clusters
   cdef double g1, g2
 
   cdef int i
-  for i in range(N):
+  for i in range(n_clusters):
     g1, g2 = gauss()
     c_list[i].langevin(g1, g2)
 
 
-cdef void SetKList():
+cdef Separation(int p_1, int p_2):
+  cdef double d
+  p1 = p_list[p_1]
+  p2 = p_list[p_2]
+  d2 = (p2.x - p1.x)**2 + (p2.y - p1.y)**2
+  return np.sqrt(d2)
+
+
+cdef void CheckNeighbours():
   global N, cells
   global lat_size
   global k_list
-  global p_list
+  global c_list, p_list
 
-  cdef int i, k
-  for i in range(N, cells):
+  cdef int i, j
+  for i in range(N, N + cells):
     k_list[i] = -1
 
-    for i in range(N):
-      p = p_list[i]
-      k = int(p.x / cell_size) + int(p.y / cell_size) * lat_size + N
-      k_list[i] = k_list[k]
-      k_list[k] = i
+  for i in range(N):
+    p = p_list[i]
+    j = int(p.x / cell_size) + int(p.y / cell_size) * lat_size + N
+    k_list[i] = k_list[j]
+    k_list[j] = i
 
-
-cdef NeighbouringCells():
-  global N, n_clusters
-  global c_list, p_list
-  global k_list
-
-  cdef int i, j, m1, m2, j1, j2
+  cdef int cell_1, cell_2, particle_1, particle_2
+  cdef int c1, c2
   for i in range(cells):
-    m1 = k + N
+    # for each cell
+    cell_1 = i + N
     for j in range(5):
-      m2 = k_neighbors[k, i] + N
-      j1 = k_list[m1]
-      while j1 >= 0:
-        j2 = k_list[m2]
-        while j2 >= 0:
-          if j2 < j1 or m1 != m2:
-            c1 = p_list[j1].cluster
-            c2 = p_list[j2].cluster
-            c1 != c2:
-              if c_list[c1].mass < c_list[c2].mass
-                JoinClusters(c2, c1)
+      # for each neighbour of that cell
+      particle_1 = k_list[cell_1]
+      cell_2 = k_neighbours[i, j] + N
+      while particle_1 + 1:
+        # for each particle in that cell
+        particle_2 = k_list[particle_1]
+        while particle_2 + 1:
+          # for each neighbouring particle
+          if particle_2 < particle_1 or cell_1 != cell_2:
+            c1 = p_list[particle_1].cluster
+            c2 = p_list[particle_2].cluster
+
+            if c1 != c2:
+              if Separation(particle_1, particle_2) <= 1:
+                if c_list[c1].mass > c_list[c2].mass:
+                  JoinClusters(c1, c2)
+                else:
+                  JoinClusters(c2, c1)
+          particle_2 = k_list[particle_2]
+        particle_1 = k_list[particle_1]
 
 
+cdef JoinClusters(int c1, int c2):
+  global n_clusters
 
-cdef JoinClusters(int m1, int m2):
+  first_c = c_list[c1]
+  second_c = c_list[c2]
+  last_c = c_list[n_clusters - 1]
 
+  # print first_c.last_p.index, first_c.last_p.next_p
+  first_c.last_p.next_p = second_c.first_p
+  # print first_c.last_p.index, first_c.last_p.next_p.index
+  first_c.last_p = second_c.last_p
+  first_c.last_p.next_p = None
+  first_c.mass += second_c.mass
+
+  if c1 < c2:
+    first_c.index = c1
+    first_c.first_p.update_cluster(c1)
+    c_list[c1] = first_c
+
+    last_c.index = c2
+    last_c.first_p.update_cluster(c2)
+    c_list[c2] = last_c
+  else:
+    first_c.index = c2
+    first_c.first_p.update_cluster(c2)
+    c_list[c2] = first_c
+
+    last_c.index = c1
+    last_c.first_p.update_cluster(c1)
+    c_list[c1] = last_c
+
+  n_clusters -= 1
+
+  global k_list
+  cdef int i, j
+  print ''
+  for i in range(n_clusters):
+    c = c_list[i]
+    print 'cluster {} ({}):'.format(c.index, c.mass)
+    p = c.first_p
+    print '\t{} ({})'.format(p.index, p.cluster)
+    while p.next_p is not None:
+      p = p.next_p
+      print '\t{} ({})'.format(p.index, p.cluster)
+
+  # exit()
 
 
 cdef KinEnergy():
@@ -312,22 +384,11 @@ cpdef void plot():
   global kin_U
   global N, max_steps
   global k_list
-  print(N)
 
   fig, ax = plt.subplots(figsize=(8, 8))
 
   plt.subplot2grid((2, 2), (0, 0), colspan=1, rowspan=1)
-  cdef double[:] x, y
   cdef int i, j
-  x = np.zeros(N)
-  y = np.zeros(N)
-  for i in range(N):
-    x[i] = p_list[i].x
-    y[i] = p_list[i].y
-  for i in range(N):
-    print(x[i], y[i])
-  plt.scatter(x, y, s=400)
-
   cdef double x_i, y_j
   for i in range(lat_size):
     if i:
@@ -337,6 +398,15 @@ cpdef void plot():
           y_j = j * cell_size
           plt.plot([0, L], [y_j, y_j], color='gray', linestyle='-')
           plt.plot([x_i, x_i], [0, L], color='gray', linestyle='-')
+
+  cdef double[:] x, y
+  x = np.zeros(N)
+  y = np.zeros(N)
+  for i in range(N):
+    x[i] = p_list[i].x
+    y[i] = p_list[i].y
+    plt.text(x[i], y[i], p_list[i].index)
+  plt.scatter(x, y, s=400)
 
   global L, lat_size
   plt.xticks(np.linspace(0, L, lat_size + 1))
