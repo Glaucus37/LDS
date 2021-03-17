@@ -57,8 +57,8 @@ class Cluster:
     self.vy += 0.5 * self.ay * dt
 
   def langevin(self, double g1, double g2):
-    self.ax = self.mass * (-self.gamma * self.vx + self.sigma * g1)
-    self.ay = self.mass * (-self.gamma * self.vy + self.sigma * g2)
+    self.ax = -self.gamma * self.mass * self.vx + self.sigma * g1
+    self.ay = -self.gamma * self.mass * self.vy + self.sigma * g2
 
 
 
@@ -75,13 +75,13 @@ cdef PBC(double x):
   return x
 
 
-cdef double t_max, dt, dt_sq, o_sqrt_dt
+cdef double t_max, dt, dt_sq
 cdef double gamma, sigma, kBT
 cdef double[:] kin_U
 cdef int max_steps
 
 cpdef void TimeSetup(double run_t, double run_dt):
-  global t_max, dt, max_steps, dt_sq, o_sqrt_dt
+  global t_max, dt, max_steps, dt_sq
   global gamma, sigma, kBT
   global max_steps
   global kin_U
@@ -91,11 +91,10 @@ cpdef void TimeSetup(double run_t, double run_dt):
   dt = run_dt
   max_steps = int(t_max / dt)
   dt_sq = dt**2
-  o_sqrt_dt = 1 / np.sqrt(dt)
 
   gamma = 1
   kBT = 1
-  sigma = o_sqrt_dt * np.sqrt(2 * gamma * kBT)
+  sigma = np.sqrt(2 * gamma * kBT / dt)
 
   kin_U = np.zeros(max_steps)
 
@@ -194,28 +193,15 @@ cpdef double RunSim():
     Accel()
     VelHalfStep()
 
-    CheckNeighbours()
+    CheckNeighbours() # A.k.a. Particle-Particle Interaction
 
     kin_U[step] = KinEnergy()
 
     step += 1
-  """
-  global k_list
-  global n_clusters
-  cdef int i, j
-  for i in range(n_clusters):
-    c = c_list[i]
-    print 'cluster {} ({}):'.format(c.index, c.mass)
-    p = c.first_p
-    print '\t{} ({})'.format(p.index, p.cluster)
-    while p.next_p is not None:
-      p = p.next_p
-      print '\t{} ({})'.format(p.index, p.cluster)
-  """
+
   kin_U[step] = KinEnergy()
 
   t1 = time.perf_counter()
-
   return t1 - t0
 
 
@@ -321,45 +307,55 @@ cdef JoinClusters(int c1, int c2):
   second_c = c_list[c2]
   last_c = c_list[n_clusters - 1]
 
-  # print first_c.last_p.index, first_c.last_p.next_p
+  print('\n\n{} - {} - {}'.format(c1, c2, last_c.index))
+  cdef int aux
+  if c1 > c2:
+    aux = c1
+    c1 = c2
+    c2 = aux
+
+  print('{} - {} - {}'.format(c1, c2, last_c.index))
+  Momentum(first_c, second_c)
+
   first_c.last_p.next_p = second_c.first_p
-  # print first_c.last_p.index, first_c.last_p.next_p.index
   first_c.last_p = second_c.last_p
   first_c.last_p.next_p = None
   first_c.mass += second_c.mass
 
-  if c1 < c2:
-    first_c.index = c1
-    first_c.first_p.update_cluster(c1)
-    c_list[c1] = first_c
-
-    last_c.index = c2
-    last_c.first_p.update_cluster(c2)
-    c_list[c2] = last_c
-  else:
-    first_c.index = c2
-    first_c.first_p.update_cluster(c2)
-    c_list[c2] = first_c
-
-    last_c.index = c1
-    last_c.first_p.update_cluster(c1)
-    c_list[c1] = last_c
+  c_list[c1] = first_c
+  first_c = c_list[c1]
+  first_c.index = c1
+  first_c.first_p.update_cluster(c1)
 
   n_clusters -= 1
 
+  if not c2 == n_clusters:
+    last_c.index = c2
+    last_c.first_p.update_cluster(c2)
+    c_list[c2] = last_c
+
   global k_list
   cdef int i, j
-  print ''
   for i in range(n_clusters):
     c = c_list[i]
     print 'cluster {} ({}):'.format(c.index, c.mass)
     p = c.first_p
-    print '\t{} ({})'.format(p.index, p.cluster)
+    print '\t{}'.format(p.index)
     while p.next_p is not None:
       p = p.next_p
-      print '\t{} ({})'.format(p.index, p.cluster)
+      print '\t{}'.format(p.index)
 
-  # exit()
+
+cdef Momentum(first_c, second_c):
+  cdef int m1 = first_c.mass
+  cdef int m2 = second_c.mass
+  cdef double vx1 = first_c.vx
+  cdef double vy1 = first_c.vy
+  cdef double vx2 = second_c.vx
+  cdef double vy2 = second_c.vy
+
+  first_c.vx = (m1 * vx1 + m2 * vx2) / (m1 + m2)
+  first_c.vy = (m1 * vy1 + m2 * vy2) / (m1 + m2)
 
 
 cdef KinEnergy():

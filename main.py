@@ -1,25 +1,26 @@
 import functions as f
 # Particle - 9
-# Cluster - 36
+# Cluster - 32
 
-def setup(t=1e1, dt=1e-3, L=10, cells=10, n=10):
-    f.TimeSetup(t, dt) # 77
-    f.InitBoard(L, cells) # 110
-    f.InitClusters(n, L) # 129
+def setup(t=1e2, dt=1e-3, L=10, cells=10, n=10):
+    f.TimeSetup(t, dt) # 83
+    f.InitBoard(L, cells) # 106
+    f.InitClusters(n, L) # 124
 
-    t = f.RunSim() # 183
-        # Verlet() - 216
-        # VelHalfStep() - 248
-        # Accel() - 249
+    t = f.RunSim() # 182
+        # Verlet() - 208
+        # VelHalfStep() - 221
+        # Accel() - 241
 
-        # CheckNeighbors() - 273
-        # JoinClusters() - 317
+        # CheckNeighbors() - 259
+        # JoinClusters() - 302
+        # Momentum() - 347
 
-        # KinEnergy() - 324
+        # KinEnergy() - 347
 
     print(t)
 
-    f.plot() # 328
+    f.plot() # 365
 
 
 if __name__ == '__main__':
