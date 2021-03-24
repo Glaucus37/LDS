@@ -7,7 +7,7 @@ import time
 # Section I: classes
 
 class Particle:
-  def __init__(self, int n, int l):
+  def __init__(self, int n, int L):
     self.index = n
     self.cluster = n
 
@@ -16,14 +16,14 @@ class Particle:
     self.x = L * rand.random()
     self.y = L * rand.random()
 
-  def update_pos(self, double dx, double dy):
+  def update_pos(self, double dx, double dy): # NONRECURSIVE
     self.x = PBC(self.x + dx)
     self.y = PBC(self.y + dy)
 
     if self.next_p is not None:
       self.next_p.update_pos(dx, dy)
 
-  def update_cluster(self, int c):
+  def update_cluster(self, int c): # NONRECURSIVE
     self.cluster = c
     if self.next_p is not None:
       self.next_p.update_cluster(c)
@@ -40,6 +40,7 @@ class Cluster:
     self.index = p.index
     self.mass = 1
     self.gamma = 1
+    self.kBT = 1
     self.sigma = sigma
 
     cdef double theta
@@ -153,7 +154,7 @@ cpdef void InitClusters(int n, double l):
     c_list[i].vy += vy_cm
 
 
-cdef void Setneighbours():
+cpdef void SetNeighbours():
   global k_neighbours
   global lat_size
   cdef int[:] naive_neigbors
@@ -161,33 +162,34 @@ cdef void Setneighbours():
   cdef int k, i
   for k in range(cells):
     naive_neighbours = np.array([0, 1, lat_size-1, lat_size, lat_size+1])
+
+    if k % lat_size == 0:
+      naive_neighbours[2] += lat_size
+    elif k % lat_size == lat_size - 1:
+      naive_neighbours[1] -= lat_size
+      naive_neighbours[4] -= lat_size
+    if k // lat_size == lat_size - 1:
+      naive_neighbours[2] -= cells
+      naive_neighbours[3] -= cells
+      naive_neighbours[4] -= cells
+
     for i in range(5):
-      naive_neighbours[i] += k
-
-  if k % lat_size == 0:
-    naive_neighbours[2] += lat_size
-  elif k % lat_size == lat_size - 1:
-    naive_neighbours[1] -= lat_size
-    naive_neighbours[4] -= lat_size
-  if k // lat_size == lat_size - 1:
-    naive_neighbours[2] -= cells
-    naive_neighbours[3] -= cells
-    naive_neighbours[4] -= cells
-
-  k_neighbours[k] = naive_neighbours
+      k_neighbours[k, i] = naive_neighbours[i] + k
+      # naive_neighbours[i] += k
 
 
-cdef int step, next
+cdef int step
 
 cpdef double RunSim():
-  global step, next, max_steps
+  global step, max_steps
+  global n_clusters
   cdef double t0 = time.perf_counter()
   cdef double t1
 
-  step = 0
-  while step < max_steps - 1:
-    next = step + 1
+  # Accel()
 
+  step = 0
+  while step < max_steps - 1 and n_clusters - 1:
     Verlet()
     VelHalfStep()
     Accel()
@@ -195,7 +197,8 @@ cpdef double RunSim():
 
     CheckNeighbours() # A.k.a. Particle-Particle Interaction
 
-    kin_U[step] = KinEnergy()
+    if step < max_steps - 1:
+      kin_U[step] = KinEnergy()
 
     step += 1
 
@@ -248,7 +251,7 @@ cdef Accel():
     c_list[i].langevin(g1, g2)
 
 
-cdef Separation(int p_1, int p_2):
+cdef Separation(int p_1, int p_2): # PBC
   cdef double d
   p1 = p_list[p_1]
   p2 = p_list[p_2]
@@ -261,6 +264,7 @@ cdef void CheckNeighbours():
   global lat_size
   global k_list
   global c_list, p_list
+  global cell_size
 
   cdef int i, j
   for i in range(N, N + cells):
@@ -291,7 +295,7 @@ cdef void CheckNeighbours():
             c2 = p_list[particle_2].cluster
 
             if c1 != c2:
-              if Separation(particle_1, particle_2) <= 1:
+              if Separation(particle_1, particle_2) <= cell_size:
                 if c_list[c1].mass > c_list[c2].mass:
                   JoinClusters(c1, c2)
                 else:
@@ -307,14 +311,14 @@ cdef JoinClusters(int c1, int c2):
   second_c = c_list[c2]
   last_c = c_list[n_clusters - 1]
 
-  print('\n\n{} - {} - {}'.format(c1, c2, last_c.index))
+  #v print('\n\n{} - {} - {}'.format(c1, c2, last_c.index))
   cdef int aux
   if c1 > c2:
     aux = c1
     c1 = c2
     c2 = aux
 
-  print('{} - {} - {}'.format(c1, c2, last_c.index))
+  # print('{} - {} - {}'.format(c1, c2, last_c.index))
   Momentum(first_c, second_c)
 
   first_c.last_p.next_p = second_c.first_p
@@ -323,9 +327,9 @@ cdef JoinClusters(int c1, int c2):
   first_c.mass += second_c.mass
 
   c_list[c1] = first_c
-  first_c = c_list[c1]
+  first_c = c_list[c1] # ????
   first_c.index = c1
-  first_c.first_p.update_cluster(c1)
+  first_c.first_p.update_cluster(c1) # second_c.first_p
 
   n_clusters -= 1
 
@@ -334,16 +338,18 @@ cdef JoinClusters(int c1, int c2):
     last_c.first_p.update_cluster(c2)
     c_list[c2] = last_c
 
+  """
   global k_list
   cdef int i, j
   for i in range(n_clusters):
     c = c_list[i]
     print 'cluster {} ({}):'.format(c.index, c.mass)
     p = c.first_p
-    print '\t{}'.format(p.index)
+    print '\tvx: {}\n\t{}'.format(c.vx, p.index)
     while p.next_p is not None:
       p = p.next_p
       print '\t{}'.format(p.index)
+  """
 
 
 cdef Momentum(first_c, second_c):
@@ -368,7 +374,7 @@ cdef KinEnergy():
     c = c_list[i]
     kin += c.mass * (c.vx**2 + c.vy**2)
 
-  kin *= 0.5 / N
+  kin *= 0.5
 
   return kin
 
@@ -380,6 +386,7 @@ cpdef void plot():
   global kin_U
   global N, max_steps
   global k_list
+  global L, lat_size
 
   fig, ax = plt.subplots(figsize=(8, 8))
 
@@ -396,15 +403,15 @@ cpdef void plot():
           plt.plot([x_i, x_i], [0, L], color='gray', linestyle='-')
 
   cdef double[:] x, y
+  cdef double s = 4000 / lat_size
   x = np.zeros(N)
   y = np.zeros(N)
   for i in range(N):
     x[i] = p_list[i].x
     y[i] = p_list[i].y
     plt.text(x[i], y[i], p_list[i].index)
-  plt.scatter(x, y, s=400)
+  plt.scatter(x, y, s=s)
 
-  global L, lat_size
   plt.xticks(np.linspace(0, L, lat_size + 1))
   plt.yticks(np.linspace(0, L, lat_size + 1))
   plt.xlim(0, 10)
@@ -414,5 +421,6 @@ cpdef void plot():
   plt.plot(kin_U, linewidth=1)
   plt.plot([0, max_steps], [1, 1],
     color='gray', linestyle='--')
+  plt.text(0, 0.5, kin_U[-1])
 
   plt.show()
