@@ -2,16 +2,20 @@ import functions as f
 # Particle - 9
 # Cluster - 32
 
-def setup(t=1e3, dt=1e-4, L=10, cells=10, n=20):
+def setup(t=1e2, dt=1e-3, L=10, cells=10, n=10):
     f.TimeSetup(t, dt) # 83
-    f.InitBoard(L, cells) # 107
+    f.InitBoard(L, cells) # 110
     f.InitClusters(n, L) # 125
     f.SetNeighbours() # 157
 
-    t = f.RunSim() # 183
-        # Verlet() - 208
+
+if __name__ == '__main__':
+    setup()
+
+    t = f.RunSim() # 184
+        # Verlet() - 217
         # VelHalfStep() - 221
-        # Accel() - 241
+        # Accel() - 245
 
         # CheckNeighbors() - 259
         # JoinClusters() - 305
@@ -22,7 +26,3 @@ def setup(t=1e3, dt=1e-4, L=10, cells=10, n=20):
     print(t)
 
     f.plot() # 381
-
-
-if __name__ == '__main__':
-    setup()
