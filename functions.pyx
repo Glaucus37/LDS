@@ -245,7 +245,8 @@ cpdef double RunSim():
     Accel()
     VelHalfStep()
 
-    joined = CheckNeighbours() # A.k.a. Particle-Particle Interaction
+    CheckJoin()
+    # joined = CheckNeighbours() # A.k.a. Particle-Particle Interaction
     """
     if not joined:
       if step - join > 100:
@@ -364,7 +365,7 @@ cdef Separation(int p_1, int p_2): # PBC
   return np.sqrt(d2)
 
 
-cdef CheckNeighbours(debug=False):
+cdef CheckNeighbours(int debug=0):
   global N, cells
   global lat_size
   global k_list
@@ -388,22 +389,29 @@ cdef CheckNeighbours(debug=False):
   for i in range(cells):
     # for each cell
     cell_1 = i + N
+    if debug: print('cell 1: {}'.format(cell_1))
     for j in range(5):
       # for each neighbour of that cell
       particle_1 = k_list[cell_1]
       cell_2 = k_neighbours[i, j] + N
+      if debug: print('cell 2: {}\nparticle 1: {}'.format(cell_2, particle_1))
       while particle_1 + 1:
         # for each particle in that cell
         particle_2 = k_list[particle_1]
+        if debug > 0: print('particle 2: {}'.format(particle_2))
         while particle_2 + 1:
           # for each neighbouring particle
+
           if particle_2 < particle_1 or cell_1 != cell_2:
             c1 = p_list[particle_1].cluster
             c2 = p_list[particle_2].cluster
 
+            if debug: print('neighbours')
             if c1 != c2:
               sep = Separation(particle_1, particle_2)
+              if debug: print('sep: {}'.format(sep))
               if sep <= cell_size:
+                if debug: print('join!')
                 PlotClusters(0)
                 joined = 1
                 if c_list[c1].mass > c_list[c2].mass:
@@ -424,25 +432,29 @@ cdef CheckNeighbours(debug=False):
 cdef CheckJoin():
   global cell_size
   global colors
+  global step
+  cdef joined = 0
 
+  cdef int join_step = 0
   cdef double sep
+
+  if step - join_step - 100:
+    joined = CheckNeighbours()
+    return joined
 
   cdef int i
   for p in p_list:
     for q in p_list:
       if p.index < q.index and not p.cluster == q.cluster:
-        try:
-          sep = Separation(p.index, q.index)
-          if sep <= cell_size:
-            print(round(sep, 2), colors[p.cluster], colors[q.cluster], sep=' - ')
-            args = CheckNeighbours(debug=True)
-            print(args)
+        sep = Separation(p.index, q.index)
+        if sep < cell_size:
+          # print(round(sep, 2), colors[p.cluster], colors[q.cluster], sep=' - ')
+          joined = CheckNeighbours()
+          if not joined:
+            print(p.index, q.index)
+            joined = CheckNeighbours(1)
             PlotClusters(2)
-            return True
-        except TypeError:
-          print(sep)
-
-          return False
+            join_step = step
 
 
 cdef void JoinClusters(int c1, int c2):
@@ -525,7 +537,7 @@ cdef KinEnergy():
 
 colors = ['b', 'r', 'g', 'y', 'm', 'c', 'k', 'orange', 'fuchsia', 'greenyellow']
 
-def PlotClusters(joined=False):
+def PlotClusters(joined):
   global kin_U
   global N, max_steps
   global k_list
@@ -540,9 +552,7 @@ def PlotClusters(joined=False):
   cdef int n = 64
   cdef double[:] t = np.linspace(0, 2*np.pi, n+1)
   plt.subplot2grid((1, 1), (0, 0), colspan=1, rowspan=1)
-  plt.title('after' if joined else 'before')
-  if joined == 2:
-    plt.text(5, 5, '!!')
+  plt.title('Error' if joined > 1 else 'after' if joined else 'before')
 
   for i in range(lat_size):
     if i:
@@ -557,6 +567,8 @@ def PlotClusters(joined=False):
     x = R * np.cos(t) + p.x
     y = R * np.sin(t) + p.y
     plt.plot(x, y, color=colors[p.cluster])
+    if joined > 1:
+      plt.text(p.x, p.y, '{}'.format(p.index))
 
   plt.xticks(np.linspace(0, L, lat_size + 1))
   plt.yticks(np.linspace(0, L, lat_size + 1))
