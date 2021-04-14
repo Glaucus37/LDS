@@ -6,33 +6,54 @@ import time
 
 # Section I: Classes
 
+
 # Particles have their positions initialized and are assigned to a cluster
-class Particle:
-  def __init__(self, int n, int N, int L):
+cdef class Particle:
+  def __init__(self, int n, double n_sqrt, double step):
     self.index = n
     self.cluster = n
 
-    self.next_p = None
-
-    cdef int n_sqrt = int(np.sqrt(N))
-    step = L / n_sqrt
+    self.next_p = -1
 
     self.x = step * (n % n_sqrt)
     self.y = step * (n // n_sqrt)
 
 
+cdef update_pos(int i, double dx, double dy):
+  p = p_list[c_list[i].index]
+  cdef bint next = True
+  while next:
+    p.x = PBC(p.x + dx)
+    p.y = PBC(p.y + dy)
+    p = p.next_p
+    if not p + 1:
+      next = False
+    else:
+      p = p_list[p]
+
+
+cdef update_cluster(int c1, int c2):
+  p = c_list[c1].first_p
+  cdef bint next = True
+  while next:
+    p.cluster = c2
+    p = p.next_p
+    if not p + 1:
+      next = False
+    else:
+      p = p_list[p]
+
 # Clusters contain at least 1 particle, and can aggregate with other clusters.
 # All routines called on particles (position, velocity, acceleration) are
   # handled by the cluster class.
 class Cluster:
-  def __init__(self, p, sigma):
+  def __init__(self, int p, double sigma):
     v = 2
-    a = 1
 
     self.first_p = p
     self.last_p = p
 
-    self.index = p.index
+    self.index = p
     self.mass = 1
     self.gamma = 1
     self.kBT = 1
@@ -41,17 +62,6 @@ class Cluster:
     cdef double theta = 2 * math.pi * rand.random()
     self.vx = v * math.cos(theta)
     self.vy = v * math.sin(theta)
-
-  # All three
-  def update_pos(self, double dx, double dy):
-    p = self.first_p
-    next = True
-    while next:
-      p.x = PBC(p.x + dx)
-      p.y = PBC(p.y + dy)
-      p = p.next_p
-      if p is None:
-        next = False
 
   def update_vel(self):
     global dt
@@ -148,14 +158,17 @@ cpdef void InitClusters(int n, double l):
   cdef double vx_cm = 0
   cdef double vy_cm = 0
 
-  global L, sigma
-  L = l
   global p_list
   global c_list
+  global L, sigma
+  L = l
+
+  cdef int n_sqrt = int(np.sqrt(N))
+  cdef double step = L / n_sqrt
 
   cdef int i
-  p_list = [Particle(i, N, L) for i in range(N)]
-  c_list = [Cluster(p_list[i], sigma) for i in range(N)]
+  p_list = [Particle(i, n_sqrt, step) for i in range(N)]
+  c_list = [Cluster(i, sigma) for i in range(N)]
 
   for i in range(N):
     vx_cm += c_list[i].vx
