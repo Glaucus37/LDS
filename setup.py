@@ -6,7 +6,8 @@ import numpy
 setup(
     ext_modules = cythonize(
         'functions.pyx',
-        annotate=True
+        annotate=True,
+        compiler_directives={'language_level' : '3'}
     ),
     include_dirs = [numpy.get_include()],
     )
