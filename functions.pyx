@@ -6,17 +6,18 @@ import time
 
 # Section I: Classes
 
-
+RAND SEED !!!!!!
 # Particles have their positions initialized and are assigned to a cluster
 cdef class Particle:
-  cdef int index, cluster, next
-  cdef Particle next_p
+  # cdef public Particle next_p
+  cdef public int index, cluster, next
+  cdef public double x, y
+
   def __init__(self, int n, int N, int L):
     self.index = n
     self.cluster = n
 
-    self.next = 0
-    self.next_p = self
+    self.next = -1
 
     cdef int n_sqrt = int(np.sqrt(N))
     cdef double step = L / n_sqrt
@@ -25,37 +26,13 @@ cdef class Particle:
     self.y = step * (n // n_sqrt)
 
 
-cdef update_pos(int i, double dx, double dy):
-  p = p_list[c_list[i].index]
-  cdef bint next = True
-  while next:
-    p.x = PBC(p.x + dx)
-    p.y = PBC(p.y + dy)
-    p = p.next_p
-    if not p + 1:
-      next = False
-    else:
-      p = p_list[p]
-
-
-cdef update_cluster(int c1, int c2):
-  p = c_list[c1].first_p
-  cdef bint next = True
-  while next:
-    p.cluster = c2
-    p = p.next_p
-    if not p + 1:
-      next = False
-    else:
-      p = p_list[p]
-
 # Clusters contain at least 1 particle, and can aggregate with other clusters.
 # All routines called on particles (position, velocity, acceleration) are
   # handled by the cluster class.
 cdef class Cluster:
-  cdef Particle first_p, last_p
-  cdef int index, mass
-  cdef double gamma, sigma, vx, vy, ax, ay
+  cdef public Particle first_p, last_p
+  cdef public int index, mass
+  cdef public double gamma, sigma, vx, vy, ax, ay
 
   def __init__(self, Particle p, double gamma, double sigma):
     cdef int v = 2
@@ -64,7 +41,7 @@ cdef class Cluster:
     self.first_p = p
     self.last_p = p
 
-    self.index = p
+    self.index = p.index
     self.mass = 1
     self.gamma = gamma
     self.sigma = sigma
@@ -77,24 +54,29 @@ cdef class Cluster:
   def update_pos(self, double dx, double dy):
     cdef Particle p
     p = self.first_p
-    next = p.next
-    while next:
+
+    cdef int next = 0
+    while next + 1:
       p.x = PBC(p.x + dx)
       p.y = PBC(p.y + dy)
-      p = p.next_p
       next = p.next
+      if next + 1:
+        p = p_list[next]
 
   def update_vel(self, double dt):
     self.vx += 0.5 * self.ax * dt
     self.vy += 0.5 * self.ay * dt
 
   def update_cluster(self, int c):
+    cdef Particle p
     p = self.first_p
-    next = p.next
-    while next:
+
+    cdef int next = 0
+    while next + 1:
       p.cluster = c
-      p = p.next_p
       next = p.next
+      if next + 1:
+        p = p_list[next]
 
   def update_acc(self, double g1, double g2):
     self.ax = -self.gamma * self.mass * self.vx + self.sigma * g1
@@ -137,7 +119,7 @@ cpdef void TimeSetup(double run_t, double run_dt):
   kBT = 1
   sigma = np.sqrt(2 * gamma * kBT / dt)
 
-  # kin_U = np.zeros(max_steps)
+  kin_U = np.zeros(max_steps)
 
 
 cdef double L, cell_size
@@ -159,20 +141,26 @@ cpdef void InitBoard(int c):
 
 cdef int N, n_clusters
 cdef long[:] k_list
-p_list = []
-c_list = []
+
+cdef list c_list
+cdef list p_list
 
 cpdef void InitClusters(int n, double l):
   global N, n_clusters
   global cells
+  global c_list
+  global p_list
 
-  cdef double density = 1e-1
+  cdef double density = 1e-1 # 2.5e-2
 
   N = int(n * density * cells)
   n_clusters = N
 
+  c_list = [None]*N
+  p_list = [None]*N
+
   global k_list
-  k_list = np.zeros(N + cells, dtype=np.int32)
+  k_list = np.zeros(N + cells, dtype=int)
 
   cdef double vx_cm = 0
   cdef double vy_cm = 0
@@ -188,8 +176,13 @@ cpdef void InitClusters(int n, double l):
   cdef double step = L / n_sqrt
 
   cdef int i
-  p_list = [Particle(i, N, L) for i in range(N)]
-  c_list = [Cluster(p_list[i], gamma, sigma) for i in range(N)]
+  global p_list
+  global c_list
+
+  plist = [Particle(i, N, L) for i in range(N)]
+  clist = [Cluster(p_list[i], gamma, sigma) for i in range(N)]
+  p_list = plist
+  c_list = clist
 
   for i in range(N):
     vx_cm += c_list[i].vx
@@ -241,20 +234,24 @@ cpdef double RunSim():
 
   step = 0
   while step < max_steps - 1 and n_clusters - 1:
+    # print(step)
+
     Verlet()
+    print('Verlet')
     VelHalfStep()
+    print('VelHalfStep')
     Accel()
+    print('Accel')
     VelHalfStep()
 
     joined = CheckNeighbours() # A.k.a. Particle-Particle Interaction
-    """
-    if step < max_steps - 1:
-      kin_U[step] = KinEnergy()
-    """
+    print('CheckNeighbours')
+    kin_U[step] = KinEnergy()
+    print(KinEnergy)
 
     step += 1
 
-  # kin_U[step] = KinEnergy()
+  kin_U[step] = KinEnergy()
 
   t1 = time.perf_counter()
   return t1 - t0
@@ -380,6 +377,7 @@ cdef CheckNeighbours():
 cdef void JoinClusters(int c1, int c2):
   global n_clusters
 
+  cdef Cluster first_c, second_c, last_c
   first_c = c_list[c1]
   second_c = c_list[c2]
   last_c = c_list[n_clusters - 1]
@@ -394,8 +392,9 @@ cdef void JoinClusters(int c1, int c2):
   # print('{} - {} - {}'.format(c1, c2, last_c.index))
   Momentum(first_c, second_c)
 
-  first_c.last_p.next_p = second_c.first_p
+  first_c.last_p.next_p = second_c.first_p.index
   first_c.last_p = second_c.last_p
+  first_c.last_p.next = 1
   first_c.mass += second_c.mass
 
   c_list[c1] = first_c
@@ -440,10 +439,8 @@ cdef KinEnergy():
 
 # Section III: Plots
 
-colors = ['b', 'r', 'g', 'y', 'm', 'c', 'k', 'orange', 'fuchsia', 'greenyellow']
-
 def PlotClusters(joined=0):
-  # global kin_U
+  global kin_U
   global N, max_steps
   global k_list
   global L, lat_size, cells
@@ -511,7 +508,7 @@ def PlotClusters(joined=0):
 
 
 cpdef void plot():
-  # global kin_U
+  global kin_U
   global N, max_steps
   global k_list
   global L, lat_size
@@ -519,7 +516,7 @@ cpdef void plot():
 
   fig, ax = plt.subplots(figsize=(8, 8))
 
-  # plt.subplot2grid((2, 2), (0, 0), colspan=1, rowspan=1)
+  plt.subplot2grid((2, 2), (0, 0), colspan=1, rowspan=1)
   """
   cdef int i, j
   cdef double x_i, y_j
@@ -533,7 +530,6 @@ cpdef void plot():
           plt.plot([x_i, x_i], [0, L], color='gray', linestyle='-')
   """
 
-  colors = ['b', 'r', 'g', 'y', 'm', 'c', 'k', 'orange', 'fuchsia', 'greenyellow']
   cdef double R = cell_size / 2
   cdef int n = 64
   cdef double[:] t = np.linspace(0, 2*np.pi, n+1)
@@ -570,12 +566,11 @@ cpdef void plot():
   plt.yticks(np.linspace(0, L, 11))
   plt.xlim(0, L)
   plt.ylim(0, L)
-  """
+
   plt.subplot2grid((2, 2), (1, 0), colspan=2, rowspan=1)
   plt.plot(kin_U[:step], linewidth=1)
   plt.plot([0, step], [1, 1],
     color='gray', linestyle='--')
-  """
 
   plt.show()
 

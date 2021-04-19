@@ -1,14 +1,15 @@
 import functions as f
+import klist as k
 import matplotlib.pyplot as plt
 
 # Particle - 9
-# Cluster - 24
+# Cluster - 28
 
 def Setup(L=10, n=1, t=1e6, dt=1e-2):
-    f.TimeSetup(t, dt) # 101
-    f.InitBoard(L) # 124
-    f.InitClusters(n, L) # 142
-    f.SetNeighbours() # 163
+    f.TimeSetup(t, dt) # 125
+    f.InitBoard(L) # 148
+    f.InitClusters(n, L) # 168
+    f.SetNeighbours() # 219
 
 
 def TimeGraph():
@@ -32,16 +33,18 @@ def TimeGraph():
 
 
 if __name__ == '__main__':
-    Setup()
+    # k.DebugKList()
 
     # TimeGraph()
 
-    # t = f.RunSim() # 188
-        # Verlet() - 217
-        # VelHalfStep() - 230
-        # Accel() - 250
+    Setup()
 
-        # CheckNeighbors() - 278
+    t = f.RunSim() # 244
+        # Verlet() - 257
+        # VelHalfStep() - 276
+        # Accel() - 298
+
+        # CheckNeighbors() - 332
         # JoinClusters() - 333
         # Momentum() - 369
 
@@ -49,6 +52,6 @@ if __name__ == '__main__':
 
         # PlotClusters() - 398
 
-    # print(t)
+    print(t)
 
-    # f.plot() # 444
+    f.plot() # 460
