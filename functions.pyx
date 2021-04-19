@@ -9,11 +9,17 @@ import time
 
 # Particles have their positions initialized and are assigned to a cluster
 cdef class Particle:
-  def __init__(self, int n, double n_sqrt, double step):
+  cdef int index, cluster, next
+  cdef Particle next_p
+  def __init__(self, int n, int N, int L):
     self.index = n
     self.cluster = n
 
-    self.next_p = -1
+    self.next = 0
+    self.next_p = self
+
+    cdef int n_sqrt = int(np.sqrt(N))
+    cdef double step = L / n_sqrt
 
     self.x = step * (n % n_sqrt)
     self.y = step * (n // n_sqrt)
@@ -46,36 +52,49 @@ cdef update_cluster(int c1, int c2):
 # Clusters contain at least 1 particle, and can aggregate with other clusters.
 # All routines called on particles (position, velocity, acceleration) are
   # handled by the cluster class.
-class Cluster:
-  def __init__(self, int p, double sigma):
-    v = 2
+cdef class Cluster:
+  cdef Particle first_p, last_p
+  cdef int index, mass
+  cdef double gamma, sigma, vx, vy, ax, ay
+
+  def __init__(self, Particle p, double gamma, double sigma):
+    cdef int v = 2
+    cdef int a = 1
 
     self.first_p = p
     self.last_p = p
 
     self.index = p
     self.mass = 1
-    self.gamma = 1
-    self.kBT = 1
+    self.gamma = gamma
     self.sigma = sigma
 
     cdef double theta = 2 * math.pi * rand.random()
     self.vx = v * math.cos(theta)
     self.vy = v * math.sin(theta)
 
-  def update_vel(self):
-    global dt
+  # All three
+  def update_pos(self, double dx, double dy):
+    cdef Particle p
+    p = self.first_p
+    next = p.next
+    while next:
+      p.x = PBC(p.x + dx)
+      p.y = PBC(p.y + dy)
+      p = p.next_p
+      next = p.next
+
+  def update_vel(self, double dt):
     self.vx += 0.5 * self.ax * dt
     self.vy += 0.5 * self.ay * dt
 
   def update_cluster(self, int c):
     p = self.first_p
-    next = True
+    next = p.next
     while next:
       p.cluster = c
       p = p.next_p
-      if p is None:
-        next = False
+      next = p.next
 
   def update_acc(self, double g1, double g2):
     self.ax = -self.gamma * self.mass * self.vx + self.sigma * g1
@@ -158,6 +177,8 @@ cpdef void InitClusters(int n, double l):
   cdef double vx_cm = 0
   cdef double vy_cm = 0
 
+  global L, gamma, sigma
+  L = l
   global p_list
   global c_list
   global L, sigma
@@ -167,8 +188,8 @@ cpdef void InitClusters(int n, double l):
   cdef double step = L / n_sqrt
 
   cdef int i
-  p_list = [Particle(i, n_sqrt, step) for i in range(N)]
-  c_list = [Cluster(i, sigma) for i in range(N)]
+  p_list = [Particle(i, N, L) for i in range(N)]
+  c_list = [Cluster(p_list[i], gamma, sigma) for i in range(N)]
 
   for i in range(N):
     vx_cm += c_list[i].vx
@@ -254,10 +275,11 @@ cdef void Verlet():
 
 cdef VelHalfStep():
   global n_clusters
+  global dt
 
   cdef int i
   for i in range(n_clusters):
-    c_list[i].update_vel()
+    c_list[i].update_vel(dt)
 
 
 # generate (and return) a pair of normally distributed numbers
