@@ -6,36 +6,46 @@ import time
 
 # Section I: Classes
 
+# RAND SEED !!!!!!
 # Particles have their positions initialized and are assigned to a cluster
-class Particle:
+cdef class Particle:
+  cdef public Particle next_p
+  cdef public int index, cluster, next
+  cdef public double x, y
+
   def __init__(self, int n, int N, int L):
     self.index = n
     self.cluster = n
 
+    self.next = 0
     self.next_p = None
 
     cdef int n_sqrt = int(np.sqrt(N))
-    step = L / n_sqrt
+    cdef double step = L / n_sqrt
 
-    self.x = step * (n % n_sqrt)
-    self.y = step * (n // n_sqrt)
+    self.x = PBC(step * (n % n_sqrt))
+    self.y = PBC(step * (n // (n_sqrt + 1)))
 
 
 # Clusters contain at least 1 particle, and can aggregate with other clusters.
 # All routines called on particles (position, velocity, acceleration) are
   # handled by the cluster class.
-class Cluster:
-  def __init__(self, p, sigma):
-    v = 2
-    a = 1
+cdef class Cluster:
+  cdef public Particle first_p, last_p
+  cdef public int index, mass
+  cdef public double gamma, sigma, vx, vy, ax, ay
 
+  def __init__(self, Particle p, double gamma, double sigma):
+    cdef int v = 2
+    cdef int a = 1
+
+    # print(p)
     self.first_p = p
     self.last_p = p
 
     self.index = p.index
     self.mass = 1
-    self.gamma = 1
-    self.kBT = 1
+    self.gamma = gamma
     self.sigma = sigma
 
     cdef double theta = 2 * math.pi * rand.random()
@@ -44,28 +54,39 @@ class Cluster:
 
   # All three
   def update_pos(self, double dx, double dy):
+    cdef Particle p
+    # print(self.first_p)
+    # exit()
     p = self.first_p
-    next = True
-    while next:
+    # print(p)
+
+    cdef int next = 1
+    # while next:
+    while p is not None:
+      # print('x:{} + {}\ny:{} + {}\n'.format(p.x, dx, p.y, dy))
       p.x = PBC(p.x + dx)
       p.y = PBC(p.y + dy)
+      next = p.next
+      # print(next)
+      # if next:
       p = p.next_p
-      if p is None:
-        next = False
+    # PlotClusters()
+    # exit()
 
-  def update_vel(self):
-    global dt
+  def update_vel(self, double dt):
     self.vx += 0.5 * self.ax * dt
     self.vy += 0.5 * self.ay * dt
 
   def update_cluster(self, int c):
+    cdef Particle p
     p = self.first_p
-    next = True
-    while next:
+
+    cdef int next = 1
+    while p is not None:
       p.cluster = c
+      next = p.next
+      # if next:
       p = p.next_p
-      if p is None:
-        next = False
 
   def update_acc(self, double g1, double g2):
     self.ax = -self.gamma * self.mass * self.vx + self.sigma * g1
@@ -97,7 +118,7 @@ cpdef void TimeSetup(double run_t, double run_dt):
   global gamma, sigma, kBT
   global max_steps
   global kin_U
-  rand.seed()
+  rand.seed(10)
 
   t_max = run_t
   dt = run_dt
@@ -108,7 +129,7 @@ cpdef void TimeSetup(double run_t, double run_dt):
   kBT = 1
   sigma = np.sqrt(2 * gamma * kBT / dt)
 
-  # kin_U = np.zeros(max_steps)
+  kin_U = np.zeros(max_steps)
 
 
 cdef double L, cell_size
@@ -130,32 +151,51 @@ cpdef void InitBoard(int c):
 
 cdef int N, n_clusters
 cdef long[:] k_list
-p_list = []
-c_list = []
+
+cdef list c_list
+cdef list p_list
 
 cpdef void InitClusters(int n, double l):
   global N, n_clusters
   global cells
+  global c_list
+  global p_list
 
   cdef double density = 1e-1
 
-  N = int(n * density * cells)
+  N = int(n * density * cells / np.pi)
   n_clusters = N
 
+  c_list = [None]*N
+  p_list = [None]*N
+
   global k_list
-  k_list = np.zeros(N + cells, dtype=np.int32)
+  k_list = np.zeros(N + cells, dtype=int)
 
   cdef double vx_cm = 0
   cdef double vy_cm = 0
 
-  global L, sigma
+  global L, gamma, sigma
   L = l
   global p_list
   global c_list
+  global L, sigma
+  L = l
+
+  cdef int n_sqrt = int(np.sqrt(N))
+  cdef double step = L / n_sqrt
 
   cdef int i
-  p_list = [Particle(i, N, L) for i in range(N)]
-  c_list = [Cluster(p_list[i], sigma) for i in range(N)]
+  global p_list
+  global c_list
+
+  plist = [Particle(i, N, L) for i in range(N)]
+  clist = [Cluster(plist[i], gamma, sigma) for i in range(N)]
+  p_list = plist
+  # print(p_list[0])
+  # print(plist, p_list)
+  c_list = clist
+  # print(clist, c_list)
 
   for i in range(N):
     vx_cm += c_list[i].vx
@@ -201,26 +241,35 @@ cpdef double RunSim():
   cdef double t1
   cdef int join = 0
 
+  global c_list, p_list
+  # print(p_list, c_list)
+  # print(c_list[0].first_p)
+  # exit()
+
   Accel()
 
-  PlotClusters()
+  # PlotClusters()
 
   step = 0
   while step < max_steps - 1 and n_clusters - 1:
+    # print(step)
+
     Verlet()
+    # print('Verlet')
     VelHalfStep()
+    # print('VelHalfStep')
     Accel()
+    # print('Accel')
     VelHalfStep()
 
     joined = CheckNeighbours() # A.k.a. Particle-Particle Interaction
-    """
-    if step < max_steps - 1:
-      kin_U[step] = KinEnergy()
-    """
+    # print('CheckNeighbours')
+    kin_U[step] = KinEnergy()
+    # print(KinEnergy)
 
     step += 1
 
-  # kin_U[step] = KinEnergy()
+  kin_U[step] = KinEnergy()
 
   t1 = time.perf_counter()
   return t1 - t0
@@ -237,14 +286,16 @@ cdef void Verlet():
     dx = c_list[i].vx * dt + 0.5 * c_list[i].ax * dt_sq
     dy = c_list[i].vy * dt + 0.5 * c_list[i].ay * dt_sq
     c_list[i].update_pos(dx, dy)
+    # print('pos')
 
 
 cdef VelHalfStep():
   global n_clusters
+  global dt
 
   cdef int i
   for i in range(n_clusters):
-    c_list[i].update_vel()
+    c_list[i].update_vel(dt)
 
 
 # generate (and return) a pair of normally distributed numbers
@@ -301,6 +352,7 @@ cdef CheckNeighbours():
   for i in range(N):
     p = p_list[i]
     j = int(p.x / cell_size) + int(p.y / cell_size) * lat_size + N
+    # print('x: {}\ny: {}\ni: {}\nj: {}\nN: {}\ncells: {}\n'.format(p.x, p.y, i, j, N, cells))
     k_list[i] = k_list[j]
     k_list[j] = i
 
@@ -345,6 +397,7 @@ cdef CheckNeighbours():
 cdef void JoinClusters(int c1, int c2):
   global n_clusters
 
+  cdef Cluster first_c, second_c, last_c
   first_c = c_list[c1]
   second_c = c_list[c2]
   last_c = c_list[n_clusters - 1]
@@ -360,6 +413,7 @@ cdef void JoinClusters(int c1, int c2):
   Momentum(first_c, second_c)
 
   first_c.last_p.next_p = second_c.first_p
+  first_c.last_p.next = 1
   first_c.last_p = second_c.last_p
   first_c.mass += second_c.mass
 
@@ -405,10 +459,8 @@ cdef KinEnergy():
 
 # Section III: Plots
 
-colors = ['b', 'r', 'g', 'y', 'm', 'c', 'k', 'orange', 'fuchsia', 'greenyellow']
-
 def PlotClusters(joined=0):
-  # global kin_U
+  global kin_U
   global N, max_steps
   global k_list
   global L, lat_size, cells
@@ -423,7 +475,7 @@ def PlotClusters(joined=0):
   cdef double[:] t = np.linspace(0, 2*np.pi, n+1)
   plt.subplot2grid((1, 1), (0, 0), colspan=1, rowspan=1)
   plt.title('Error' if joined > 1 else 'after' if joined else 'before')
-
+  """
   for i in range(lat_size):
     if i:
       x_i = i * cell_size
@@ -432,35 +484,35 @@ def PlotClusters(joined=0):
           y_j = j * cell_size
           plt.plot([0, L], [y_j, y_j], color='gray', linestyle='-')
           plt.plot([x_i, x_i], [0, L], color='gray', linestyle='-')
-
-    for p in p_list:
-      x = p.x
-      y = p.y
+  """
+  for p in p_list:
+    x = p.x
+    y = p.y
+    draw_circle(x, y)
+    if x + 0.5 >= L:
+      x -= L
       draw_circle(x, y)
-      if x + 0.5 >= L:
-        x -= L
-        draw_circle(x, y)
-        if y + 0.5 >= L:
-          y -= L
-          draw_circle(x, y)
-        elif y - 0.5 < 0:
-          y += L
-          draw_circle(x, y)
-      elif x - 0.5 < 0:
-        x += L
-        draw_circle(x, y)
-        if y + 0.5 >= L:
-          y -= L
-          draw_circle(x, y)
-        elif y - 0.5 < 0:
-          y += L
-          draw_circle(x, y)
-      elif y + 0.5 >= L:
+      if y + 0.5 >= L:
         y -= L
         draw_circle(x, y)
       elif y - 0.5 < 0:
         y += L
         draw_circle(x, y)
+    elif x - 0.5 < 0:
+      x += L
+      draw_circle(x, y)
+      if y + 0.5 >= L:
+        y -= L
+        draw_circle(x, y)
+      elif y - 0.5 < 0:
+        y += L
+        draw_circle(x, y)
+    elif y + 0.5 >= L:
+      y -= L
+      draw_circle(x, y)
+    elif y - 0.5 < 0:
+      y += L
+      draw_circle(x, y)
 
   if joined == 2:
     for c in range(cells):
@@ -476,7 +528,7 @@ def PlotClusters(joined=0):
 
 
 cpdef void plot():
-  # global kin_U
+  global kin_U
   global N, max_steps
   global k_list
   global L, lat_size
@@ -484,7 +536,7 @@ cpdef void plot():
 
   fig, ax = plt.subplots(figsize=(8, 8))
 
-  # plt.subplot2grid((2, 2), (0, 0), colspan=1, rowspan=1)
+  plt.subplot2grid((2, 2), (0, 0), colspan=1, rowspan=1)
   """
   cdef int i, j
   cdef double x_i, y_j
@@ -498,7 +550,6 @@ cpdef void plot():
           plt.plot([x_i, x_i], [0, L], color='gray', linestyle='-')
   """
 
-  colors = ['b', 'r', 'g', 'y', 'm', 'c', 'k', 'orange', 'fuchsia', 'greenyellow']
   cdef double R = cell_size / 2
   cdef int n = 64
   cdef double[:] t = np.linspace(0, 2*np.pi, n+1)
@@ -535,12 +586,11 @@ cpdef void plot():
   plt.yticks(np.linspace(0, L, 11))
   plt.xlim(0, L)
   plt.ylim(0, L)
-  """
+
   plt.subplot2grid((2, 2), (1, 0), colspan=2, rowspan=1)
   plt.plot(kin_U[:step], linewidth=1)
   plt.plot([0, step], [1, 1],
     color='gray', linestyle='--')
-  """
 
   plt.show()
 
