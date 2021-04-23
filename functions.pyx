@@ -20,11 +20,11 @@ cdef class Particle:
     self.next = 0
     self.next_p = None
 
-    cdef int n_sqrt = int(np.sqrt(N))
+    cdef double n_sqrt = np.sqrt(N)
     cdef double step = L / n_sqrt
 
     self.x = PBC(step * (n % n_sqrt))
-    self.y = PBC(step * (n // (n_sqrt + 1)))
+    self.y = PBC(step * (n // n_sqrt))
 
 
 # Clusters contain at least 1 particle, and can aggregate with other clusters.
@@ -37,7 +37,6 @@ cdef class Cluster:
 
   def __init__(self, Particle p, double gamma, double sigma):
     cdef int v = 2
-    cdef int a = 1
 
     # print(p)
     self.first_p = p
@@ -55,23 +54,12 @@ cdef class Cluster:
   # All three
   def update_pos(self, double dx, double dy):
     cdef Particle p
-    # print(self.first_p)
-    # exit()
     p = self.first_p
-    # print(p)
 
-    cdef int next = 1
-    # while next:
     while p is not None:
-      # print('x:{} + {}\ny:{} + {}\n'.format(p.x, dx, p.y, dy))
       p.x = PBC(p.x + dx)
       p.y = PBC(p.y + dy)
-      next = p.next
-      # print(next)
-      # if next:
       p = p.next_p
-    # PlotClusters()
-    # exit()
 
   def update_vel(self, double dt):
     self.vx += 0.5 * self.ax * dt
@@ -81,11 +69,8 @@ cdef class Cluster:
     cdef Particle p
     p = self.first_p
 
-    cdef int next = 1
     while p is not None:
       p.cluster = c
-      next = p.next
-      # if next:
       p = p.next_p
 
   def update_acc(self, double g1, double g2):
@@ -97,7 +82,7 @@ cdef class Cluster:
 # Section II: functions
 
 # Periodic Boundary Condition
-cdef PBC(double x):
+cdef double PBC(double x):
   global L
 
   if x < 0:
@@ -110,15 +95,15 @@ cdef PBC(double x):
 
 cdef double t_max, dt, dt_sq
 cdef double gamma, sigma, kBT
-cdef double[:] kin_U
+# cdef double[:] kin_U
 cdef int max_steps
 
 cpdef void TimeSetup(double run_t, double run_dt):
   global t_max, dt, max_steps, dt_sq
   global gamma, sigma, kBT
   global max_steps
-  global kin_U
-  rand.seed(10)
+  # global kin_U
+  rand.seed(20)
 
   t_max = run_t
   dt = run_dt
@@ -129,7 +114,7 @@ cpdef void TimeSetup(double run_t, double run_dt):
   kBT = 1
   sigma = np.sqrt(2 * gamma * kBT / dt)
 
-  kin_U = np.zeros(max_steps)
+  # kin_U = np.zeros(max_steps)
 
 
 cdef double L, cell_size
@@ -155,7 +140,7 @@ cdef long[:] k_list
 cdef list c_list
 cdef list p_list
 
-cpdef void InitClusters(int n, double l):
+cpdef void InitClusters(double n, double l):
   global N, n_clusters
   global cells
   global c_list
@@ -179,7 +164,6 @@ cpdef void InitClusters(int n, double l):
   L = l
   global p_list
   global c_list
-  global L, sigma
   L = l
 
   cdef int n_sqrt = int(np.sqrt(N))
@@ -192,10 +176,7 @@ cpdef void InitClusters(int n, double l):
   plist = [Particle(i, N, L) for i in range(N)]
   clist = [Cluster(plist[i], gamma, sigma) for i in range(N)]
   p_list = plist
-  # print(p_list[0])
-  # print(plist, p_list)
   c_list = clist
-  # print(clist, c_list)
 
   for i in range(N):
     vx_cm += c_list[i].vx
@@ -236,43 +217,30 @@ cdef int step
 
 cpdef double RunSim():
   global step, max_steps
-  global n_clusters
-  cdef double t0 = time.perf_counter()
-  cdef double t1
-  cdef int join = 0
-
   global c_list, p_list
-  # print(p_list, c_list)
-  # print(c_list[0].first_p)
-  # exit()
+  global n_clusters
+  # cdef double t0 = time.perf_counter()
+  # cdef double t1
+  cdef int join = 0
 
   Accel()
 
-  # PlotClusters()
-
   step = 0
   while step < max_steps - 1 and n_clusters - 1:
-    # print(step)
-
     Verlet()
-    # print('Verlet')
     VelHalfStep()
-    # print('VelHalfStep')
     Accel()
-    # print('Accel')
     VelHalfStep()
 
     joined = CheckNeighbours() # A.k.a. Particle-Particle Interaction
-    # print('CheckNeighbours')
-    kin_U[step] = KinEnergy()
-    # print(KinEnergy)
+    # kin_U[step] = KinEnergy()
 
     step += 1
 
-  kin_U[step] = KinEnergy()
+  # kin_U[step] = KinEnergy()
 
-  t1 = time.perf_counter()
-  return t1 - t0
+  # t1 = time.perf_counter()
+  # return t1 - t0
 
 
 cdef void Verlet():
@@ -286,7 +254,6 @@ cdef void Verlet():
     dx = c_list[i].vx * dt + 0.5 * c_list[i].ax * dt_sq
     dy = c_list[i].vy * dt + 0.5 * c_list[i].ay * dt_sq
     c_list[i].update_pos(dx, dy)
-    # print('pos')
 
 
 cdef VelHalfStep():
@@ -352,12 +319,12 @@ cdef CheckNeighbours():
   for i in range(N):
     p = p_list[i]
     j = int(p.x / cell_size) + int(p.y / cell_size) * lat_size + N
-    # print('x: {}\ny: {}\ni: {}\nj: {}\nN: {}\ncells: {}\n'.format(p.x, p.y, i, j, N, cells))
+    if j >= N + cells:
+      j -= cells
     k_list[i] = k_list[j]
     k_list[j] = i
 
   cdef double sep
-  cdef int joined = 0
   cdef int cell_1, cell_2, particle_1, particle_2
   cdef int c1, c2
   for i in range(cells):
@@ -381,17 +348,13 @@ cdef CheckNeighbours():
               sep = Separation(particle_1, particle_2)
               if sep <= cell_size:
                 # PlotClusters(0)
-                joined = 1
                 if c_list[c1].mass > c_list[c2].mass:
                   JoinClusters(c1, c2)
                 else:
                   JoinClusters(c2, c1)
-                # PlotClusters(1)
 
           particle_2 = k_list[particle_2]
       particle_1 = k_list[particle_1]
-
-  return joined
 
 
 cdef void JoinClusters(int c1, int c2):
@@ -402,14 +365,12 @@ cdef void JoinClusters(int c1, int c2):
   second_c = c_list[c2]
   last_c = c_list[n_clusters - 1]
 
-  #v print('\n\n{} - {} - {}'.format(c1, c2, last_c.index))
   cdef int aux
   if c1 > c2:
     aux = c1
     c1 = c2
     c2 = aux
 
-  # print('{} - {} - {}'.format(c1, c2, last_c.index))
   Momentum(first_c, second_c)
 
   first_c.last_p.next_p = second_c.first_p
@@ -459,8 +420,8 @@ cdef KinEnergy():
 
 # Section III: Plots
 
-def PlotClusters(joined=0):
-  global kin_U
+def PlotClusters(time=None):
+  # global kin_U
   global N, max_steps
   global k_list
   global L, lat_size, cells
@@ -474,17 +435,12 @@ def PlotClusters(joined=0):
   cdef int n = 64
   cdef double[:] t = np.linspace(0, 2*np.pi, n+1)
   plt.subplot2grid((1, 1), (0, 0), colspan=1, rowspan=1)
-  plt.title('Error' if joined > 1 else 'after' if joined else 'before')
-  """
-  for i in range(lat_size):
-    if i:
-      x_i = i * cell_size
-      for j in range(lat_size):
-        if j:
-          y_j = j * cell_size
-          plt.plot([0, L], [y_j, y_j], color='gray', linestyle='-')
-          plt.plot([x_i, x_i], [0, L], color='gray', linestyle='-')
-  """
+  if t is not None:
+    plt.title('L = {}, N = {}, t = {}s'.format(L, N, np.around(time, 1)))
+  else:
+    plt.title('Final Distribution')
+  # plt.title('Error' if joined > 1 else 'after' if joined else 'before')
+
   for p in p_list:
     x = p.x
     y = p.y
@@ -514,13 +470,8 @@ def PlotClusters(joined=0):
       y += L
       draw_circle(x, y)
 
-  if joined == 2:
-    for c in range(cells):
-      plt.text(0.5 + c % lat_size, 0.5 + c // lat_size, c)
-
-
-  plt.xticks(np.linspace(0, L, lat_size + 1))
-  plt.yticks(np.linspace(0, L, lat_size + 1))
+  plt.xticks(np.linspace(0, L, 5))
+  plt.yticks(np.linspace(0, L, 5).round())
   plt.xlim(0, L)
   plt.ylim(0, L)
 
@@ -528,7 +479,7 @@ def PlotClusters(joined=0):
 
 
 cpdef void plot():
-  global kin_U
+  # global kin_U
   global N, max_steps
   global k_list
   global L, lat_size
@@ -537,18 +488,6 @@ cpdef void plot():
   fig, ax = plt.subplots(figsize=(8, 8))
 
   plt.subplot2grid((2, 2), (0, 0), colspan=1, rowspan=1)
-  """
-  cdef int i, j
-  cdef double x_i, y_j
-  for i in range(lat_size):
-    if i:
-      x_i = i * cell_size
-      for j in range(lat_size):
-        if j:
-          y_j = j * cell_size
-          plt.plot([0, L], [y_j, y_j], color='gray', linestyle='-')
-          plt.plot([x_i, x_i], [0, L], color='gray', linestyle='-')
-  """
 
   cdef double R = cell_size / 2
   cdef int n = 64
@@ -586,12 +525,12 @@ cpdef void plot():
   plt.yticks(np.linspace(0, L, 11))
   plt.xlim(0, L)
   plt.ylim(0, L)
-
+  """
   plt.subplot2grid((2, 2), (1, 0), colspan=2, rowspan=1)
   plt.plot(kin_U[:step], linewidth=1)
   plt.plot([0, step], [1, 1],
     color='gray', linestyle='--')
-
+  """
   plt.show()
 
 
