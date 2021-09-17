@@ -161,7 +161,6 @@ cpdef void InitClusters(double n, double l):
   cdef double vy_cm = 0
 
   global L, gamma, sigma
-  L = l
   global p_list
   global c_list
   L = l
@@ -193,7 +192,7 @@ cpdef void InitClusters(double n, double l):
 cpdef void SetNeighbours():
   global k_neighbours
   global lat_size
-  cdef int[:] naive_neigbors
+  cdef int[:] naive_neighbours
 
   cdef int k, i
   for k in range(cells):
@@ -275,7 +274,7 @@ cdef (double, double) gauss(double s_d=1.):
     r_sq = v1 ** 2 + v2 ** 2
   fac = s_d * np.sqrt(-2. * np.log(r_sq) / r_sq)
   return (v1 * fac, v2 * fac)
-
+gauss)
 
 cdef Accel():
   global n_clusters

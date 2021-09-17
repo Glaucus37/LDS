@@ -5,8 +5,8 @@ import numpy
 
 setup(
     ext_modules = cythonize(
-        'functions.pyx',
-        'klist.pyx',
+        # 'functions.pyx',
+        'Board.pyx',
         annotate=True,
         compiler_directives={'language_level' : '3'}
     ),

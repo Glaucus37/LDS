@@ -1,5 +1,4 @@
 import functions as f
-import klist as k
 import matplotlib.pyplot as plt
 
 # Particle - 9
