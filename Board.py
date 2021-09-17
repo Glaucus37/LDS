@@ -164,13 +164,8 @@ class Board:
         fig, ax = plt.subplots(figsize=(8, 8))
         plt.subplot2grid((1, 1), (0, 0), colspan=1, rowspan=1)
         L = self.board_length
-        for i in range(1, L):
-            for j in range(1, L):
-                plt.plot([i, i], [0, L], 'gray', linestyle='-', linewidth=0.1)
-                plt.plot([0, L], [j, j], 'gray', linestyle='-', linewidth=0.1)
         for p in self.p_list:
             self.DrawCircle((p.x, p.y))
-            plt.text(p.x, p.y, f'{p.index}')
         plt.xlim(0, L)
         plt.ylim(0, L)
         plt.show()
