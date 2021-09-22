@@ -11,8 +11,10 @@ cdef class Board:
   cdef public double max_t, dt, dt_sq, kBT
   cdef public long[:] k_list
   cdef public long[:, :] k_neighbours
+  cdef public double[:] kin_U
   cdef public list p_list, c_list
 
+  # Initialization
   def __init__(self, int n=2, int l=10, double t=1e1, double dt=1e-1):
     self.board_length = l
     self.n_cells = l ** 2
@@ -25,6 +27,7 @@ cdef class Board:
   def TimeSetup(self):
     rand.seed(37)
     self.max_steps = int(self.max_t / self.dt)
+    self.kin_U = np.zeros(self.max_steps, dtype=float)
     self.dt_sq = self.dt ** 2
     self.gamma = 1
     self.kBT = 1
@@ -73,6 +76,7 @@ cdef class Board:
       for j in range(5):
         self.k_neighbours[i, j] = naive_neighbours[j] + i
 
+  # Neighbours Logic
   def Separation(self, int i, int j):
     p1 = self.p_list[i]
     p2 = self.p_list[j]
@@ -138,6 +142,7 @@ cdef class Board:
       self.c_list[c2] = last_c
       last_c.UpdateCluster(c2)
 
+  # Generic Functions
   def Momentum(self, Cluster first_c, Cluster second_c):
     cdef int m1, m2
     cdef double vx1, vy1, vx2, vy2
@@ -167,6 +172,7 @@ cdef class Board:
     fac = s_d * np.sqrt(-2 * np.log(r_sq) / r_sq)
     return (v1 * fac, v2 * fac)
 
+  # Iterated Functions
   def ClusterSimStep(self):
     cdef Cluster c
     for c in self.c_list[:self.n_clusters]:
@@ -174,8 +180,16 @@ cdef class Board:
       c.UpdateVel()
       c.UpdateAcc()
       c.UpdateVel()
+    self.kin_U[self.step] = self.CalculateEnergy()
     self.CheckNeighbours()
 
+  def CalculateEnergy(self):
+    cdef double energy = 0.
+    for c in self.c_list[:self.n_clusters]:
+      energy += c.KinEnergy()
+    return 0.5 * energy
+
+  # Plots
   def PlotBoard(self):
     fig, ax = plt.subplots(figsize=(8, 8))
     plt.subplot2grid((1, 1), (0, 0), colspan=1, rowspan=1)
@@ -186,15 +200,24 @@ cdef class Board:
     plt.ylim(0, L)
     plt.show()
 
+  def PlotEnergy(self):
+    fig, ax = plt.subplots(figsize=(10, 4))
+    plt.subplot2grid((1, 1), (0, 0), colspan=1, rowspan=1)
+    max_energy = np.amax(self.kin_U)
+    plt.plot([-1, self.step], [0, 0], 'k', linestyle='-', linewidth=0.2)
+    plt.plot([0, 0], [-1, max_energy*1.1], 'k', linestyle='-', linewidth=0.2)
+    plt.plot([-1, self.step], [self.kBT, self.kBT], 'r', linestyle='-', linewidth=0.5)
+    plt.plot(self.kin_U[:self.step])
+    plt.ylabel(r'Energy ($k_BT$)')
+    plt.yticks([0, 1], ['0', '1'])
+    plt.xlabel('time (computational units)')
+    plt.xticks([], [])
+
   def DrawCircle(self, pos):
     circle = plt.Circle(pos, 0.5)
     plt.gcf().gca().add_artist(circle)
 
-  def ListAllClusters(self):
-    cdef Cluster c
-    for c in self.c_list[:self.n_clusters]:
-      c.ListCluster()
-
+  # Run Simulation
   def RunSim(self):
     cdef double t0
     t0 = time.time()
@@ -205,7 +228,9 @@ cdef class Board:
     while self.step < self.max_steps - 1 and self.n_clusters - 1:
       self.ClusterSimStep()
       self.step += 1
+    self.kin_U[self.step] = self.CalculateEnergy()
     print(f'Run Duration: {round(time.time() - t0, 3)}s')
+    self.PlotEnergy()
     self.PlotBoard()
 
 
@@ -239,16 +264,17 @@ cdef class Cluster:
   def __init__(self, int i, Board board):
     self.board = board
     self.index = i
+    self.mass = 1
     cdef Particle p
     p = board.p_list[i]
     self.first_p = p
     self.last_p = p
-    self.mass = 1
 
     cdef double theta
     theta = 2 * np.pi * rand.random()
-    self.vx = np.cos(theta)
-    self.vy = np.sin(theta)
+    cdef double v0 = 1
+    self.vx = v0 * np.cos(theta)
+    self.vy = v0 * np.sin(theta)
 
   def UpdatePos(self):
     cdef double dx, dy
@@ -287,3 +313,6 @@ cdef class Cluster:
       print(p.index, end='')
       p = p.next_p
     print('')
+
+  def KinEnergy(self):
+    return self.mass * (self.vx**2 + self.vy**2)
